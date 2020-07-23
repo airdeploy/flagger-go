@@ -1,0 +1,271 @@
+{
+  "sdkConfig": {
+    "SDK_INGESTION_INTERVAL": 60,
+    "SDK_INGESTION_MAX_CALLS": 500
+  },
+  "hashKey": "2779",
+  "flags": [
+    {
+      "hashkey": "adfndsf",
+      "codename": "new-signup-flow",
+
+      "variations": [
+        {
+          "codename": "enabled",
+          "probability": 1,
+          "payload": {
+            "showButtons": true
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 0.3,
+          "filters": [
+            {
+              "attributeName": "country",
+              "type": "STRING",
+              "operator": "IN",
+              "value": [
+                "Japan",
+                "France"
+              ]
+            }
+          ]
+        }
+      ],
+      "whitelist": [
+        {
+          "type": "User",
+          "id": "90843823",
+          "variation": "enabled"
+        },
+        {
+          "type": "User",
+          "id": "14612844",
+          "variation": "enabled"
+        },
+        {
+          "type": "User",
+          "id": "64741829",
+          "variation": "enabled"
+        }
+      ],
+      "blacklist": [
+        {
+          "type": "User",
+          "id": "19421826"
+        }
+      ]
+    },
+    {
+      "hashkey": "dfsdf42",
+      "codename": "premium-support",
+      "variations": [
+        {
+          "codename": "enabled",
+          "probability": 1,
+          "payload": {
+
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "admin",
+              "operator": "IS",
+              "type": "BOOLEAN",
+              "value": true
+            }
+          ]
+        },
+        {
+          "entityType": "User",
+          "samplingPercentage": 0.1,
+          "filters": [
+            {
+              "attributeName": "country",
+              "operator": "IS",
+              "type": "STRING",
+              "value": "USA"
+            }
+          ]
+        }
+      ],
+      "whitelist": [
+        {
+          "type": "User",
+          "id": "35307096",
+          "variation": "enabled"
+        },
+        {
+          "type": "User",
+          "id": "89401142",
+          "variation": "enabled"
+        }
+      ],
+      "blacklist": [
+        {
+          "type": "Company",
+          "id": "52272353"
+        }
+      ]
+    },
+    {
+      "hashkey": "43Hchd3",
+      "codename": "enterprise-dashboard",
+      "variations": [
+        {
+          "codename": "enabled",
+          "probability": 1,
+          "payload": {
+            "newFeature": "on"
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "admin",
+              "operator": "IS",
+              "type": "BOOLEAN",
+              "value": true
+            }
+          ]
+        },
+        {
+          "entityType": "Company",
+          "samplingPercentage": 0.15,
+          "filters": [
+
+          ]
+        }
+      ],
+      "whitelist": [
+        {
+          "type": "Company",
+          "id": "31404847",
+          "variation": "enabled"
+        },
+        {
+          "type": "Company",
+          "id": "51209353",
+          "variation": "enabled"
+        }
+      ],
+      "blacklist": [
+        {
+          "type": "Company",
+          "id": "69854015"
+        }
+      ]
+    },
+    {
+      "hashkey": "dscsdBKC",
+      "codename": "color-theme",
+      "variations": [
+        {
+          "codename": "blue",
+          "probability": 0.33,
+          "payload": {
+
+          }
+        },
+        {
+          "codename": "red",
+          "probability": 0.33,
+          "payload": {
+
+          }
+        },
+        {
+          "codename": "green",
+          "probability": 0.34,
+          "payload": {
+
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 0.1,
+          "filters": [
+
+          ]
+        }
+      ],
+      "whitelist": [
+
+      ],
+      "blacklist": [
+
+      ]
+    },
+    {
+      "hashkey": "ilhh34rN",
+      "codename": "crypto-pay",
+      "variations": [
+        {
+          "codename": "bitcoin",
+          "probability": 0.5,
+          "payload": {
+            "dollarExchangeRate": 9500
+          }
+        },
+        {
+          "codename": "ether",
+          "probability": 0.5,
+          "payload": {
+            "dollarExchangeRate": 450
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "createdAt",
+              "operator": "LTE",
+              "type": "NUMBER",
+              "value": 1411171200
+            }
+          ]
+        },
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "country",
+              "operator": "IS",
+              "type": "STRING",
+              "value": "SouthKorea"
+            }
+          ]
+        }
+      ],
+      "whitelist": [
+
+      ],
+      "blacklist": [
+
+      ]
+    },
+    {
+      "hashkey": "24bk3BFd",
+      "codename": "dynamic-pricing",
+      "killSwitchEngaged": true
+    }
+  ]
+}

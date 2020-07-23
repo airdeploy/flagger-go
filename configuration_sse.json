@@ -1,0 +1,67 @@
+{
+  "sdkConfig": {
+    "SDK_INGESTION_INTERVAL": 60,
+    "SDK_INGESTION_MAX_CALLS": 500
+  },
+  "hashKey": "2779",
+  "flags": [
+    {
+      "hashkey": "dfsdf42",
+      "codename": "dynamic-pricing",
+      "isActive": true,
+      "variations": [
+        {
+          "codename": "enabled",
+          "probability": 1,
+          "payload": {
+
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "admin",
+              "operator": "IS",
+              "type": "BOOLEAN",
+              "value": true
+            }
+          ]
+        },
+        {
+          "entityType": "User",
+          "samplingPercentage": 0.1,
+          "filters": [
+            {
+              "attributeName": "country",
+              "operator": "IS",
+              "type": "STRING",
+              "value": "USA"
+            }
+          ]
+        }
+      ],
+      "whitelist": [
+        {
+          "type": "User",
+          "id": "35307096",
+          "variation": "enabled"
+        },
+        {
+          "type": "User",
+          "id": "89401142",
+          "variation": "enabled"
+        }
+      ],
+      "blacklist": [
+        {
+          "type": "Company",
+          "id": "52272353"
+        }
+      ]
+    }
+  ]
+}

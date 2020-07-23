@@ -1,0 +1,522 @@
+{
+  "sdkConfig": {
+    "SDK_INGESTION_INTERVAL": 60,
+    "SDK_INGESTION_MAX_CALLS": 1
+  },
+  "hashKey": "2779",
+  "flags": [
+    {
+      "hashkey": "adfndsf",
+      "codename": "new-signup-flow",
+      "variations": [
+        {
+          "codename": "enabled",
+          "probability": 1,
+          "payload": {
+            "showButtons": true
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "country",
+              "operator": "IN",
+              "type": "STRING",
+              "value": [
+                "Japan",
+                "France"
+              ]
+            },
+            {
+              "attributeName": "bday",
+              "operator": "IN",
+              "type": "DATE",
+              "value": [
+                "2016-03-16T05:44:23.000Z",
+                "2016-04-16T05:44:23.000Z",
+                "2016-05-16T05:44:23.000Z"
+              ]
+            },
+            {
+              "attributeName": "age",
+              "operator": "IN",
+              "type": "NUMBER",
+              "value": [
+                234322343,
+                20.2,
+                42
+              ]
+            },
+            {
+              "attributeName": "booleans",
+              "operator": "IN",
+              "type": "BOOLEAN",
+              "value": [
+                false,
+                false,
+                false
+              ]
+            }
+          ]
+        }
+      ],
+      "whitelist": [
+        {
+          "type": "User",
+          "id": "90843823",
+          "variation": "enabled"
+        },
+        {
+          "type": "User",
+          "id": "14612844",
+          "variation": "enabled"
+        },
+        {
+          "type": "User",
+          "id": "64741829",
+          "variation": "enabled"
+        }
+      ],
+      "blacklist": [
+        {
+          "type": "User",
+          "id": "19421826"
+        }
+      ]
+    },
+    {
+      "hashkey": "dfsdf42",
+      "codename": "premium-support",
+      "variations": [
+        {
+          "codename": "enabled",
+          "probability": 1,
+          "payload": {
+
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "admin",
+              "operator": "IS",
+              "type": "BOOLEAN",
+              "value": true
+            }
+          ]
+        },
+        {
+          "entityType": "User",
+          "samplingPercentage": 0.1,
+          "filters": [
+            {
+              "attributeName": "country",
+              "operator": "IS",
+              "type": "STRING",
+              "value": "USA"
+            }
+          ]
+        }
+      ],
+      "whitelist": [
+        {
+          "type": "User",
+          "id": "35307096",
+          "variation": "enabled"
+        },
+        {
+          "type": "User",
+          "id": "89401142",
+          "variation": "enabled"
+        }
+      ],
+      "blacklist": [
+        {
+          "type": "Company",
+          "id": "52272353"
+        }
+      ]
+    },
+    {
+      "hashkey": "43Hchd3",
+      "codename": "enterprise-dashboard",
+      "variations": [
+        {
+          "codename": "enabled",
+          "probability": 1,
+          "payload": {
+            "newFeature": "on"
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "admin",
+              "operator": "IS",
+              "type": "BOOLEAN",
+              "value": true
+            }
+          ]
+        },
+        {
+          "entityType": "Company",
+          "samplingPercentage": 0.15,
+          "filters": [
+
+          ]
+        }
+      ],
+      "whitelist": [
+        {
+          "type": "Company",
+          "id": "31404847",
+          "variation": "enabled"
+        },
+        {
+          "type": "Company",
+          "id": "51209353",
+          "variation": "enabled"
+        }
+      ],
+      "blacklist": [
+        {
+          "type": "Company",
+          "id": "69854015"
+        }
+      ]
+    },
+    {
+      "hashkey": "dscsdBKC",
+      "codename": "color-theme",
+      "variations": [
+        {
+          "codename": "blue",
+          "probability": 0.33,
+          "payload": {
+
+          }
+        },
+        {
+          "codename": "red",
+          "probability": 0.33,
+          "payload": {
+
+          }
+        },
+        {
+          "codename": "green",
+          "probability": 0.34,
+          "payload": {
+
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 0.1,
+          "filters": [
+
+          ]
+        }
+      ],
+      "whitelist": [
+
+      ],
+      "blacklist": [
+
+      ]
+    },
+    {
+      "hashkey": "ilhh34rN",
+      "codename": "crypto-pay",
+      "variations": [
+        {
+          "codename": "bitcoin",
+          "probability": 0.5,
+          "payload": {
+            "dollarExchangeRate": 9500
+          }
+        },
+        {
+          "codename": "ether",
+          "probability": 0.5,
+          "payload": {
+            "dollarExchangeRate": 450
+          }
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "createdAt",
+              "operator": "LTE",
+              "type": "NUMBER",
+              "value": 1411171200
+            }
+          ]
+        },
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "country",
+              "operator": "IS",
+              "type": "STRING",
+              "value": "SouthKorea"
+            }
+          ]
+        }
+      ],
+      "whitelist": [
+
+      ],
+      "blacklist": [
+
+      ]
+    },
+    {
+      "hashkey": "24bk3BFd",
+      "codename": "dynamic-pricing",
+      "killSwitchEngaged": true
+    },
+    {
+      "codename": "org-chart",
+      "variations": [
+        {
+          "codename": "expanding",
+          "probability": 0.5,
+          "payload": {}
+        },
+        {
+          "codename": "tree",
+          "probability": 0.5,
+          "payload": {}
+        }
+      ],
+      "subpopulations": [
+        {
+          "entityType": "Company",
+          "samplingPercentage": 0.11,
+          "filters": []
+        }
+      ],
+      "whitelist": [
+        {
+          "type": "User",
+          "id": "79260819",
+          "variation": "expanding"
+        },
+        {
+          "type": "User",
+          "id": "71228484",
+          "variation": "expanding"
+        },
+        {
+          "type": "User",
+          "id": "49945321",
+          "variation": "expanding"
+        },
+        {
+          "type": "User",
+          "id": "96459097",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "65533971",
+          "variation": "expanding"
+        },
+        {
+          "type": "User",
+          "id": "74248178",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "61088462",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "11278489",
+          "variation": "expanding"
+        },
+        {
+          "type": "User",
+          "id": "48319956",
+          "variation": "expanding"
+        },
+        {
+          "type": "User",
+          "id": "93461873",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "34379354",
+          "variation": "expanding"
+        },
+        {
+          "type": "User",
+          "id": "41999709",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "18256995",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "69061424",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "95955851",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "3215623",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "11658680",
+          "variation": "tree"
+        },
+        {
+          "type": "User",
+          "id": "64654939",
+          "variation": "tree"
+        },
+        {
+          "type": "Company",
+          "id": "44564647",
+          "variation": "expanding"
+        },
+        {
+          "type": "Company",
+          "id": "71904530",
+          "variation": "tree"
+        },
+        {
+          "type": "Company",
+          "id": "98496891",
+          "variation": "tree"
+        },
+        {
+          "type": "Company",
+          "id": "97043903",
+          "variation": "expanding"
+        },
+        {
+          "type": "Company",
+          "id": "91654719",
+          "variation": "expanding"
+        },
+        {
+          "type": "Company",
+          "id": "15108573",
+          "variation": "expanding"
+        },
+        {
+          "type": "Company",
+          "id": "50337017",
+          "variation": "tree"
+        },
+        {
+          "type": "Company",
+          "id": "4576815",
+          "variation": "expanding"
+        },
+        {
+          "type": "Company",
+          "id": "43872606",
+          "variation": "expanding"
+        },
+        {
+          "type": "Company",
+          "id": "13145663",
+          "variation": "expanding"
+        }
+      ],
+      "blacklist": [
+        {
+          "type": "User",
+          "id": "16464961"
+        },
+        {
+          "type": "User",
+          "id": "77863629"
+        },
+        {
+          "type": "User",
+          "id": "1663475"
+        },
+        {
+          "type": "User",
+          "id": "94467118"
+        },
+        {
+          "type": "User",
+          "id": "32958215"
+        },
+        {
+          "type": "User",
+          "id": "87551205"
+        },
+        {
+          "type": "User",
+          "id": "50348831"
+        },
+        {
+          "type": "User",
+          "id": "38366841"
+        },
+        {
+          "type": "User",
+          "id": "29159700"
+        },
+        {
+          "type": "User",
+          "id": "90617338"
+        },
+        {
+          "type": "User",
+          "id": "4983404"
+        },
+        {
+          "type": "User",
+          "id": "60616981"
+        },
+        {
+          "type": "User",
+          "id": "87941298"
+        },
+        {
+          "type": "User",
+          "id": "47973896"
+        }
+      ]
+    }
+  ]
+}

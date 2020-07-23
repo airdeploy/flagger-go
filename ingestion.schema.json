@@ -1,0 +1,141 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "entity": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "attributes": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "name": {
+              "name": "string"
+            }
+          },
+          "required": [
+            "id"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "type"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "type": "object",
+  "properties": {
+    "entities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/entity"
+      }
+    },
+    "exposures": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "hashkey": {
+            "type": "string"
+          },
+          "codename": {
+            "type": "string"
+          },
+          "variation": {
+            "type": "string"
+          },
+          "entity": {
+            "$ref": "#/definitions/entity"
+          },
+          "methodCalled": {
+            "type": "string"
+          },
+          "timestamp": {
+            "$ref": "#/definitions/timestamp"
+          }
+        },
+        "required": [
+          "codename",
+          "entity",
+          "methodCalled",
+          "timestamp"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "properties": {
+            "type": "object"
+          },
+          "entity": {
+            "$ref": "#/definitions/entity"
+          },
+          "timestamp": {
+            "$ref": "#/definitions/timestamp"
+          }
+        },
+        "required": [
+          "name",
+          "properties",
+          "entity",
+          "timestamp"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "sdkInfo": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "detectedFlags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "id": {
+      "type": "string",
+      "pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    }
+  },
+  "required": [
+    "id",
+    "entities",
+    "exposures",
+    "events",
+    "sdkInfo",
+    "detectedFlags"
+  ]
+}
