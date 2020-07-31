@@ -106,7 +106,7 @@ func EscapeEntity(e *Entity) *Entity {
 
 	// propagate "name" and "id" to attributes if not exists
 	if _, ok := res.Attributes["name"]; !ok && res.Name != "" {
-		res.Attributes["name"] = e.Name
+		res.Attributes["name"] = res.Name
 	}
 	if _, ok := res.Attributes["id"]; !ok {
 		res.Attributes["id"] = res.ID
@@ -115,6 +115,32 @@ func EscapeEntity(e *Entity) *Entity {
 	// propagate default type for Entity
 	if res.Type == "" {
 		res.Type = "User"
+	}
+
+	if res.Group != nil {
+		res.Group = escapeGroup(res.Group)
+	}
+
+	return res
+}
+
+// lower casing attributes keys  and propagate name and id to attributes
+func escapeGroup(g *Group) *Group {
+	var res = g
+
+	//first lowercase all attribute keys
+	if res.Attributes == nil {
+		res.Attributes = Attributes{}
+	}
+
+	res.Attributes = escapeAttributes(res.Attributes)
+
+	// propagate "name" and "id" to attributes if not exists
+	if _, ok := res.Attributes["name"]; !ok && res.Name != "" {
+		res.Attributes["name"] = res.Name
+	}
+	if _, ok := res.Attributes["id"]; !ok {
+		res.Attributes["id"] = res.ID
 	}
 	return res
 }
@@ -131,6 +157,7 @@ func (e *Entity) equalsGroup(group *Group) bool {
 type Group struct {
 	ID         string     `json:"id"`
 	Type       string     `json:"type,omitempty"`
+	Name       string     `json:"name,omitempty"`
 	Attributes Attributes `json:"attributes,omitempty"`
 }
 

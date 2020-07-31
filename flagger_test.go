@@ -94,7 +94,22 @@ func Test_validateIngestionSchema(t *testing.T) {
 	err = flagger.Init(ctx, &InitArgs{APIKey: apiKey})
 	assert.NoError(t, err)
 
-	flagger.IsEnabled("test", &core.Entity{ID: "1"}) // for least one ingestion
+	flagger.IsEnabled("test", &core.Entity{
+		ID:   "1234",
+		Type: "User",
+		Name: "John",
+		Group: &core.Group{
+			ID:   "5678",
+			Type: "Company",
+			Name: "Stark Int",
+			Attributes: map[string]interface{}{
+				"active": true,
+			},
+		},
+		Attributes: map[string]interface{}{
+			"lastName": "Travolta",
+		},
+	}) // for least one ingestion
 }
 
 func TestFlagger_Init(t *testing.T) {
@@ -548,6 +563,86 @@ func TestFlagger_GetVariation(t *testing.T) {
 	assert.Equal(t, "enabled", variation)
 
 	time.Sleep(100 * time.Millisecond) // await for ingestion
+}
+
+func TestFilters(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var configuration *core.Configuration
+	mustJSONOFile("configuration.json", &configuration)
+
+	gock.New(flagsURL).
+		Get(flagsPath + apiKey).
+		Reply(200).
+		JSON(configuration)
+	defer gock.OffAll()
+
+	flagger := NewFlagger()
+	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
+	assert.NoError(t, err)
+
+	flagger.ingester.SetConfig(&core.SDKConfig{
+		SDKIngestionInterval: 60,
+		SDKIngestionMaxItems: 0,
+	})
+
+	t.Run("positive test", func(t *testing.T) {
+
+		t.Run("LTE, equal test", func(t *testing.T) {
+			isEnabled := flagger.IsEnabled("color-theme", &core.Entity{ID: "31404847", Type: "User",
+				Attributes: map[string]interface{}{
+					"createdAt": "2014-09-20T00:00:00Z",
+				}})
+			assert.True(t, isEnabled)
+		})
+
+		t.Run("LTE, less test", func(t *testing.T) {
+			isEnabled := flagger.IsEnabled("color-theme", &core.Entity{ID: "31404847", Type: "User",
+				Attributes: map[string]interface{}{
+					"createdAt": "2014-08-20T00:00:00Z",
+				}})
+			assert.True(t, isEnabled)
+		})
+
+		t.Run("GTE(equal) and IS test", func(t *testing.T) {
+			isEnabled := flagger.IsEnabled("color-theme", &core.Entity{ID: "31404847", Type: "User",
+				Attributes: map[string]interface{}{
+					"createdAt": "2016-03-16T05:44:23Z",
+					"country":   "USA",
+				}})
+			assert.True(t, isEnabled)
+		})
+
+	})
+
+	t.Run("negative test", func(t *testing.T) {
+		t.Run("date is out of range", func(t *testing.T) {
+			isEnabled := flagger.IsEnabled("color-theme", &core.Entity{ID: "31404847", Type: "User",
+				Attributes: map[string]interface{}{
+					"createdAt": "2015-09-20T00:00:00Z",
+				}})
+			assert.False(t, isEnabled)
+		})
+
+		t.Run("date is right, country is absent", func(t *testing.T) {
+			isEnabled := flagger.IsEnabled("color-theme", &core.Entity{ID: "31404847", Type: "User",
+				Attributes: map[string]interface{}{
+					"createdAt": "2016-03-16T05:44:23Z",
+				}})
+			assert.False(t, isEnabled)
+		})
+
+		t.Run("date is right, but wrong country", func(t *testing.T) {
+			isEnabled := flagger.IsEnabled("color-theme", &core.Entity{ID: "31404847", Type: "User",
+				Attributes: map[string]interface{}{
+					"createdAt": "2016-03-16T05:44:23Z",
+					"country":   "UK",
+				}})
+			assert.False(t, isEnabled)
+		})
+	})
+
 }
 
 func TestFlagger_SSE(t *testing.T) {

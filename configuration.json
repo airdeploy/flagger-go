@@ -169,45 +169,316 @@
       ]
     },
     {
-      "hashkey": "dscsdBKC",
       "codename": "color-theme",
       "variations": [
         {
-          "codename": "blue",
-          "probability": 0.33,
-          "payload": {
-
-          }
+          "codename": "green",
+          "probability": 0.34,
+          "payload": {}
         },
         {
           "codename": "red",
           "probability": 0.33,
-          "payload": {
-
-          }
+          "payload": {}
         },
         {
-          "codename": "green",
-          "probability": 0.34,
-          "payload": {
-
-          }
+          "codename": "blue",
+          "probability": 0.33,
+          "payload": {}
         }
       ],
       "subpopulations": [
         {
           "entityType": "User",
-          "samplingPercentage": 0.1,
+          "samplingPercentage": 1,
           "filters": [
-
+            {
+              "attributeName": "createdAt",
+              "operator": "GTE",
+              "type": "DATE",
+              "value": "2016-03-16T05:44:23Z"
+            },
+            {
+              "attributeName": "country",
+              "operator": "IS",
+              "type": "STRING",
+              "value": "USA"
+            }
+          ]
+        },
+        {
+          "entityType": "User",
+          "samplingPercentage": 1,
+          "filters": [
+            {
+              "attributeName": "createdAt",
+              "operator": "LTE",
+              "type": "DATE",
+              "value": "2014-09-20T00:00:00Z"
+            }
           ]
         }
       ],
       "whitelist": [
-
+        {
+          "type": "User",
+          "id": "27305632",
+          "variation": "blue"
+        },
+        {
+          "type": "User",
+          "id": "94467118",
+          "variation": "red"
+        },
+        {
+          "type": "User",
+          "id": "53259281",
+          "variation": "red"
+        },
+        {
+          "type": "User",
+          "id": "29159700",
+          "variation": "blue"
+        },
+        {
+          "type": "User",
+          "id": "57041242",
+          "variation": "red"
+        },
+        {
+          "type": "User",
+          "id": "19703345",
+          "variation": "green"
+        },
+        {
+          "type": "User",
+          "id": "47536985",
+          "variation": "green"
+        },
+        {
+          "type": "User",
+          "id": "87551205",
+          "variation": "red"
+        },
+        {
+          "type": "User",
+          "id": "14523526",
+          "variation": "blue"
+        },
+        {
+          "type": "User",
+          "id": "11713807",
+          "variation": "blue"
+        },
+        {
+          "type": "User",
+          "id": "96459097",
+          "variation": "green"
+        },
+        {
+          "type": "User",
+          "id": "3215623",
+          "variation": "green"
+        },
+        {
+          "type": "User",
+          "id": "4055385",
+          "variation": "red"
+        },
+        {
+          "type": "User",
+          "id": "32958215",
+          "variation": "green"
+        },
+        {
+          "type": "User",
+          "id": "86735491",
+          "variation": "blue"
+        },
+        {
+          "type": "User",
+          "id": "1663475",
+          "variation": "red"
+        },
+        {
+          "type": "User",
+          "id": "29067970",
+          "variation": "blue"
+        },
+        {
+          "type": "User",
+          "id": "41999709",
+          "variation": "blue"
+        },
+        {
+          "type": "User",
+          "id": "16493597",
+          "variation": "red"
+        },
+        {
+          "type": "User",
+          "id": "93046935",
+          "variation": "blue"
+        },
+        {
+          "type": "User",
+          "id": "16464961",
+          "variation": "red"
+        },
+        {
+          "type": "User",
+          "id": "34379354",
+          "variation": "green"
+        },
+        {
+          "type": "User",
+          "id": "81501760",
+          "variation": "red"
+        },
+        {
+          "type": "Company",
+          "id": "13145663",
+          "variation": "red"
+        },
+        {
+          "type": "Company",
+          "id": "4576815",
+          "variation": "blue"
+        },
+        {
+          "type": "Company",
+          "id": "98496891",
+          "variation": "green"
+        },
+        {
+          "type": "Company",
+          "id": "43872606",
+          "variation": "red"
+        },
+        {
+          "type": "Company",
+          "id": "71904530",
+          "variation": "blue"
+        },
+        {
+          "type": "Company",
+          "id": "15108573",
+          "variation": "red"
+        },
+        {
+          "type": "Company",
+          "id": "50337017",
+          "variation": "blue"
+        },
+        {
+          "type": "Company",
+          "id": "44564647",
+          "variation": "red"
+        },
+        {
+          "type": "Company",
+          "id": "91654719",
+          "variation": "green"
+        },
+        {
+          "type": "Company",
+          "id": "97043903",
+          "variation": "red"
+        }
       ],
       "blacklist": [
-
+        {
+          "type": "User",
+          "id": "83367660"
+        },
+        {
+          "type": "User",
+          "id": "69061424"
+        },
+        {
+          "type": "User",
+          "id": "95955851"
+        },
+        {
+          "type": "User",
+          "id": "57061269"
+        },
+        {
+          "type": "User",
+          "id": "79260819"
+        },
+        {
+          "type": "User",
+          "id": "71228484"
+        },
+        {
+          "type": "User",
+          "id": "86879022"
+        },
+        {
+          "type": "User",
+          "id": "77387194"
+        },
+        {
+          "type": "User",
+          "id": "74933756"
+        },
+        {
+          "type": "User",
+          "id": "82024760"
+        },
+        {
+          "type": "User",
+          "id": "4983404"
+        },
+        {
+          "type": "User",
+          "id": "89096103"
+        },
+        {
+          "type": "User",
+          "id": "11037373"
+        },
+        {
+          "type": "User",
+          "id": "78569105"
+        },
+        {
+          "type": "User",
+          "id": "93852545"
+        },
+        {
+          "type": "User",
+          "id": "61458330"
+        },
+        {
+          "type": "User",
+          "id": "19719292"
+        },
+        {
+          "type": "User",
+          "id": "52828031"
+        },
+        {
+          "type": "User",
+          "id": "9610494"
+        },
+        {
+          "type": "User",
+          "id": "96599536"
+        },
+        {
+          "type": "User",
+          "id": "75829401"
+        },
+        {
+          "type": "User",
+          "id": "78038293"
+        },
+        {
+          "type": "User",
+          "id": "37345199"
+        }
       ]
     },
     {
