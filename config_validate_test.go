@@ -29,13 +29,14 @@ func Test_prepareInitArgs(t *testing.T) {
 		assert.False(t, sdkInfo == SDKInfo)
 		assert.Equal(t, sdkInfo, SDKInfo)
 		assert.False(t, args1 == args2)
+		apiKey := "apikey"
 		assert.EqualValues(t,
 			&InitArgs{
 				APIKey:          "apikey",
-				SourceURL:       defaultSourceURL,
-				BackupSourceURL: defaultBackupSourceURL,
-				IngestionURL:    defaultIngestionURL,
-				SSEURL:          defaultSSEURL,
+				SourceURL:       defaultSourceURL + apiKey,
+				BackupSourceURL: defaultBackupSourceURL + apiKey,
+				IngestionURL:    defaultIngestionURL + apiKey,
+				SSEURL:          defaultSSEURL + apiKey,
 			},
 			args2)
 		assert.NoError(t, err)
@@ -78,8 +79,9 @@ func Test_prepareInitArgs(t *testing.T) {
 	})
 
 	t.Run("empty SourceURL", func(t *testing.T) {
+		apiKey := "apikey"
 		args1 := &InitArgs{
-			APIKey:          "apikey",
+			APIKey:          apiKey,
 			SourceURL:       "",
 			BackupSourceURL: "https://backup.airdeploy.io",
 			IngestionURL:    "https://ingestion.airdeploy.io",
@@ -90,12 +92,13 @@ func Test_prepareInitArgs(t *testing.T) {
 		assert.Equal(t, sdkInfo, SDKInfo)
 		assert.False(t, args1 == args2)
 		assert.NoError(t, err)
-		assert.Equal(t, defaultSourceURL, args2.SourceURL)
+		assert.Equal(t, defaultSourceURL+apiKey, args2.SourceURL)
 	})
 
 	t.Run("empty BackupSourceURL", func(t *testing.T) {
+		apiKey := "apikey"
 		args1 := &InitArgs{
-			APIKey:          "apikey",
+			APIKey:          apiKey,
 			SourceURL:       "https://source.airdeploy.io",
 			BackupSourceURL: "",
 			IngestionURL:    "https://ingestion.airdeploy.io",
@@ -106,12 +109,13 @@ func Test_prepareInitArgs(t *testing.T) {
 		assert.Equal(t, sdkInfo, SDKInfo)
 		assert.False(t, args1 == args2)
 		assert.NoError(t, err)
-		assert.Equal(t, defaultBackupSourceURL, args2.BackupSourceURL)
+		assert.Equal(t, defaultBackupSourceURL+apiKey, args2.BackupSourceURL)
 	})
 
 	t.Run("empty IngestionURL", func(t *testing.T) {
+		apiKey := "apikey"
 		args1 := &InitArgs{
-			APIKey:          "apikey",
+			APIKey:          apiKey,
 			SourceURL:       "https://source.airdeploy.io",
 			BackupSourceURL: "https://backup.airdeploy.io",
 			IngestionURL:    "",
@@ -122,12 +126,13 @@ func Test_prepareInitArgs(t *testing.T) {
 		assert.Equal(t, sdkInfo, SDKInfo)
 		assert.False(t, args1 == args2)
 		assert.NoError(t, err)
-		assert.Equal(t, defaultIngestionURL, args2.IngestionURL)
+		assert.Equal(t, defaultIngestionURL+apiKey, args2.IngestionURL)
 	})
 
 	t.Run("empty SSEURL", func(t *testing.T) {
+		apiKey := "apikey"
 		args1 := &InitArgs{
-			APIKey:          "apikey",
+			APIKey:          apiKey,
 			SourceURL:       "https://source.airdeploy.io",
 			BackupSourceURL: "https://backup.airdeploy.io",
 			IngestionURL:    "https://ingestion.airdeploy.io",
@@ -138,7 +143,7 @@ func Test_prepareInitArgs(t *testing.T) {
 		assert.Equal(t, sdkInfo, SDKInfo)
 		assert.False(t, args1 == args2)
 		assert.NoError(t, err)
-		assert.Equal(t, defaultSSEURL, args2.SSEURL)
+		assert.Equal(t, defaultSSEURL+apiKey, args2.SSEURL)
 	})
 
 	t.Run("bad SourceURL", func(t *testing.T) {

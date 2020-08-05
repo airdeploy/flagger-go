@@ -645,6 +645,7 @@ func TestFilters(t *testing.T) {
 
 }
 
+// dynamic-pricing flag killSwitch is on at source(configuration.json) but off at sse(configuration_sse.json)
 func TestFlagger_SSE(t *testing.T) {
 	flaggerConfigMessage := getConfigMessage()
 	ctx := context.Background()
@@ -666,7 +667,7 @@ func TestFlagger_SSE(t *testing.T) {
 	defer gock.OffAll()
 
 	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey, SSEURL: "http://localhost:3100"})
+	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey, SSEURL: "http://localhost:3100/"})
 	assert.NoError(t, err)
 
 	time.Sleep(100 * time.Millisecond)
@@ -681,6 +682,47 @@ func TestFlagger_SSE(t *testing.T) {
 	assert.True(t, sampled)
 	done()
 	time.Sleep(10 * time.Millisecond)
+}
+
+func TestCustomURLS(t *testing.T) {
+	logrus.SetLevel(logrus.DebugLevel)
+	var configuration *core.Configuration
+	mustJSONOFile("configuration.json", &configuration)
+	customURL := "https://mycustomurl-somewebsite.com"
+	gock.New(customURL).
+		Get("/" + apiKey).
+		Reply(200).
+		JSON(configuration)
+
+	gock.New(customURL).
+		Post("/ingest/" + apiKey).
+		Reply(200)
+	defer gock.OffAll()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	flagger := NewFlagger()
+	err := flagger.Init(ctx, &InitArgs{
+		APIKey:       apiKey,
+		SourceURL:    customURL + "/",
+		IngestionURL: customURL + "/ingest/",
+	})
+	assert.NoError(t, err)
+
+	time.Sleep(100 * time.Millisecond)
+
+	entity := &core.Entity{
+		ID:         "kfjvv3",
+		Attributes: core.Attributes{"admin": true},
+	}
+
+	// dynamic-pricing isKill
+	sampled := flagger.IsSampled("premium-support", entity)
+	assert.True(t, sampled)
+
+	shutdown := flagger.Shutdown(2 * time.Second)
+	assert.False(t, shutdown)
 }
 
 func TestShutdown(t *testing.T) {
@@ -700,7 +742,6 @@ func TestShutdown(t *testing.T) {
 	})
 
 	t.Run("Init, Shutdown, Init recover initial state", func(t *testing.T) {
-		logrus.SetLevel(logrus.DebugLevel)
 
 		defer gock.OffAll()
 		flagger, err := initFlaggerInstance(apiKey, "configuration.json")

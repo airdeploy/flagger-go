@@ -72,10 +72,10 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 
 	// get configuration from SourceURL/BackupSourceURL
 	var configuration *core.Configuration
-	err = getConfiguration(ctx, flagger.rt, args.SourceURL+args.APIKey, defaultAttemptsConnection, &configuration)
+	err = getConfiguration(ctx, flagger.rt, args.SourceURL, defaultAttemptsConnection, &configuration)
 	if err != nil {
 		log.Warnf("Unable to fetch FlaggerConfiguration from SourceURL")
-		err := getConfiguration(ctx, flagger.rt, args.BackupSourceURL+args.APIKey, defaultAttemptsConnection, &configuration)
+		err := getConfiguration(ctx, flagger.rt, args.BackupSourceURL, defaultAttemptsConnection, &configuration)
 		if err != nil {
 			log.Warnf("Unable to fetch FlaggerConfiguration from BackupSourceURL")
 		} else {

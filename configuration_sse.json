@@ -8,7 +8,6 @@
     {
       "hashkey": "dfsdf42",
       "codename": "dynamic-pricing",
-      "isActive": true,
       "variations": [
         {
           "codename": "enabled",

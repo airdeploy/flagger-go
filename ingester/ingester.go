@@ -105,5 +105,4 @@ func (i *Ingester) SetConfig(v *core.SDKConfig) {
 // SetURL
 func (i *Ingester) SetURL(ingestionURL string) {
 	i.strategy.SetURL(ingestionURL)
-	log.Debugf("ingestionURL: %s", ingestionURL)
 }

@@ -64,7 +64,6 @@ type Client struct {
 
 // SetURL using to changing subscribing url
 func (c *Client) SetURL(URL string) {
-	log.Debugf("SSE URL: %s", URL)
 	c.changeURL <- URL
 	c.one.Do(func() { go c.infiniteLoop() })
 }
