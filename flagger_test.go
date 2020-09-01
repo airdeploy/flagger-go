@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/airdeploy/flagger-go/sse"
+	"github.com/airdeploy/flagger-go/v3/sse"
 	"github.com/sirupsen/logrus"
 	"github.com/xeipuuv/gojsonschema"
 	"io/ioutil"
@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/airdeploy/flagger-go/core"
-	"github.com/airdeploy/flagger-go/ingester"
-	"github.com/airdeploy/flagger-go/json"
+	"github.com/airdeploy/flagger-go/v3/core"
+	"github.com/airdeploy/flagger-go/v3/ingester"
+	"github.com/airdeploy/flagger-go/v3/json"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/h2non/gock.v1"
 )

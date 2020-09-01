@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/Rican7/retry"
 	"github.com/Rican7/retry/strategy"
-	"github.com/airdeploy/flagger-go/json"
+	"github.com/airdeploy/flagger-go/v3/json"
 	"github.com/pkg/errors"
 	"io/ioutil"
 	"net/http"

@@ -1,8 +1,8 @@
 package ingester
 
 import (
-	"github.com/airdeploy/flagger-go/core"
-	"github.com/airdeploy/flagger-go/log"
+	"github.com/airdeploy/flagger-go/v3/core"
+	"github.com/airdeploy/flagger-go/v3/log"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"testing"

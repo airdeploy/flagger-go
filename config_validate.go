@@ -3,8 +3,8 @@ package flagger
 import (
 	"net/url"
 
-	"github.com/airdeploy/flagger-go/core"
-	"github.com/airdeploy/flagger-go/log"
+	"github.com/airdeploy/flagger-go/v3/core"
+	"github.com/airdeploy/flagger-go/v3/log"
 	"github.com/pkg/errors"
 )
 

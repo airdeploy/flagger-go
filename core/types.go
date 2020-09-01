@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/airdeploy/flagger-go/log"
+	"github.com/airdeploy/flagger-go/v3/log"
 	"github.com/pkg/errors"
 )
 

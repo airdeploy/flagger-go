@@ -2,9 +2,9 @@ package ingester
 
 import (
 	"context"
-	"github.com/airdeploy/flagger-go/core"
-	"github.com/airdeploy/flagger-go/json"
-	"github.com/airdeploy/flagger-go/log"
+	"github.com/airdeploy/flagger-go/v3/core"
+	"github.com/airdeploy/flagger-go/v3/json"
+	"github.com/airdeploy/flagger-go/v3/log"
 	"github.com/google/uuid"
 	"sync"
 	"time"

@@ -3,7 +3,7 @@ package ingester
 import (
 	"bytes"
 	"compress/gzip"
-	"github.com/airdeploy/flagger-go/log"
+	"github.com/airdeploy/flagger-go/v3/log"
 	"io/ioutil"
 	"net/http"
 	"time"

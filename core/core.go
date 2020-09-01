@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/airdeploy/flagger-go/log"
+	"github.com/airdeploy/flagger-go/v3/log"
 	"sync"
 )
 

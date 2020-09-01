@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/airdeploy/flagger-go/core"
+	"github.com/airdeploy/flagger-go/v3/core"
 )
 
 var (

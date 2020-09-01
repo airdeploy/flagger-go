@@ -2,7 +2,7 @@ package flagger
 
 import (
 	"context"
-	"github.com/airdeploy/flagger-go/core"
+	"github.com/airdeploy/flagger-go/v3/core"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/h2non/gock.v1"
 	"net/http"

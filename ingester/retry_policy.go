@@ -2,7 +2,7 @@ package ingester
 
 import (
 	"errors"
-	"github.com/airdeploy/flagger-go/log"
+	"github.com/airdeploy/flagger-go/v3/log"
 )
 
 const defaultMaxMemorySize = 2e8 // 100 MB

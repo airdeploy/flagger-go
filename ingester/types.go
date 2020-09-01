@@ -2,7 +2,7 @@ package ingester
 
 import (
 	"context"
-	"github.com/airdeploy/flagger-go/core"
+	"github.com/airdeploy/flagger-go/v3/core"
 	"sync"
 )
 

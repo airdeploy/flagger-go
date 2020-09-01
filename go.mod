@@ -1,4 +1,4 @@
-module github.com/airdeploy/flagger-go
+module github.com/airdeploy/flagger-go/v3
 
 go 1.13
 

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/airdeploy/flagger-go/core"
+	"github.com/airdeploy/flagger-go/v3/core"
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )

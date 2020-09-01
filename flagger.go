@@ -6,11 +6,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/airdeploy/flagger-go/core"
-	"github.com/airdeploy/flagger-go/ingester"
-	"github.com/airdeploy/flagger-go/json"
-	"github.com/airdeploy/flagger-go/log"
-	"github.com/airdeploy/flagger-go/sse"
+	"github.com/airdeploy/flagger-go/v3/core"
+	"github.com/airdeploy/flagger-go/v3/ingester"
+	"github.com/airdeploy/flagger-go/v3/json"
+	"github.com/airdeploy/flagger-go/v3/log"
+	"github.com/airdeploy/flagger-go/v3/sse"
 )
 
 // check implementation public interface on compile time
