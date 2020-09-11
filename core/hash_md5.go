@@ -16,10 +16,7 @@ import (
 // HashMD5 represent hash function for sampling subpopulation and choose variation
 func HashMD5(id string) float64 {
 
-	hash := ""
-	for _, b := range md5.Sum([]byte(id)) {
-		hash += fmt.Sprintf("%02x", b)
-	}
+	var hash = fmt.Sprintf("%x", md5.Sum([]byte(id)))
 
 	x, _ := new(big.Int).SetString(hash, 16)
 	q, _ := new(big.Int).SetString("340282366920938463463374607431768211455", 10)
