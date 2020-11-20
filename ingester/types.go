@@ -15,8 +15,9 @@ type Ingester struct {
 type GroupStrategy struct {
 	// the responsibility of the WaitGroup here is to ensure that all ingestion data
 	// is sent when ShutdownWithTimeout is called
-	wg          sync.WaitGroup
-	ingestionWg sync.WaitGroup
+	wg            sync.WaitGroup
+	ingestionWg   sync.WaitGroup
+	retryPolicyWg sync.WaitGroup
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -37,8 +38,10 @@ type GroupStrategy struct {
 	retryPolicyChannel   chan *RetryPolicyRequest
 
 	// ingestion data
-	callCount   int
-	accumulator []*IngestionDataRequest
+	callCount                     int
+	exposuresCount                int
+	firstExposuresIngestThreshold int
+	accumulator                   []*IngestionDataRequest
 }
 
 type RetryPolicy struct {
@@ -70,8 +73,8 @@ type RetryPolicyCallback func(err error)
 type IngestionDataRequest struct {
 	Id            string           `json:"id"`
 	Entities      []*core.Entity   `json:"entities"`
-	Exposures     []*core.Exposure `json:"exposures"` // the output of every single API call
+	Exposures     []*core.Exposure `json:"exposures"` // the output of every Flag Function call
 	Events        []*core.Event    `json:"events"`    // user generated event
-	SDKInfo       *core.SDKInfo    `json:"sdkInfo"`   // Dictionary holding info about the Flagger version that's sending data back
+	SDKInfo       *core.SDKInfo    `json:"sdkInfo"`   // Dictionary holding info about the Flagger
 	DetectedFlags []string         `json:"detectedFlags"`
 }

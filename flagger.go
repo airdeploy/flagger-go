@@ -13,6 +13,8 @@ import (
 	"github.com/airdeploy/flagger-go/v3/sse"
 )
 
+const firstExposuresIngestThreshold = 10
+
 // check implementation public interface on compile time
 var _ interface {
 	Init(ctx context.Context, args *InitArgs) error
@@ -63,12 +65,11 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 
 	// Ingester
 	if flagger.ingester == nil {
-		flagger.ingester = ingester.NewIngester(sdkInfo)
+		flagger.ingester = ingester.NewIngester(sdkInfo, firstExposuresIngestThreshold)
 	} else {
 		flagger.ingester.Shutdown(1000 * time.Millisecond)
-		flagger.ingester = ingester.NewIngester(sdkInfo)
+		flagger.ingester = ingester.NewIngester(sdkInfo, firstExposuresIngestThreshold)
 	}
-	flagger.ingester.SetURL(args.IngestionURL)
 
 	// get configuration from SourceURL/BackupSourceURL
 	var configuration *core.Configuration
@@ -78,6 +79,7 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 		err := getConfiguration(ctx, flagger.rt, args.BackupSourceURL, defaultAttemptsConnection, &configuration)
 		if err != nil {
 			log.Warnf("Unable to fetch FlaggerConfiguration from BackupSourceURL")
+			return err
 		} else {
 			bytes, _ := json.Marshal(configuration)
 			log.Debugf("init flagger from BackupSourceURL was success: %+v", string(bytes))
@@ -89,6 +91,8 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 
 	if configuration != nil {
 		flagger.core.SetConfig(configuration)
+		flagger.ingester.Activate()
+		flagger.ingester.SetURL(args.IngestionURL)
 		flagger.ingester.SetConfig(&configuration.SdkConfig)
 	} else {
 		// have no configuration
@@ -101,7 +105,6 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 		flagger.sse.Shutdown()
 	}
 	flagger.sse = sse.NewClient(func(v *core.Configuration) {
-		log.Debugf("set new configuration")
 		flagger.core.SetConfig(v)
 		flagger.ingester.SetConfig(&v.SdkConfig)
 	})
@@ -116,7 +119,11 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 func (flagger *Flagger) Shutdown(timeout time.Duration) bool {
 	flagger.core.SetConfig(nil)
 	flagger.core.SetEntity(nil)
-	flagger.sse.Shutdown()
+
+	// this could happen if Shutdown is called before init
+	if flagger.sse != nil {
+		flagger.sse.Shutdown()
+	}
 	if flagger.ingester != nil {
 		return flagger.ingester.Shutdown(timeout)
 	}

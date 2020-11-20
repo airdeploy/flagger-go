@@ -14,12 +14,13 @@ var _ interface {
 	SetEntity(entity *core.Entity)
 	SetConfig(v *core.SDKConfig)
 	SetURL(ingestionURL string)
+	Activate()
 } = new(Ingester)
 
 // NewIngester
-func NewIngester(sdkInfo *core.SDKInfo) *Ingester {
+func NewIngester(sdkInfo *core.SDKInfo, firstExposuresIngestThreshold int) *Ingester {
 	return &Ingester{
-		strategy: NewGroupStrategy(sdkInfo, httpRequest),
+		strategy: NewGroupStrategy(sdkInfo, httpRequest, firstExposuresIngestThreshold),
 	}
 }
 
@@ -105,4 +106,9 @@ func (i *Ingester) SetConfig(v *core.SDKConfig) {
 // SetURL
 func (i *Ingester) SetURL(ingestionURL string) {
 	i.strategy.SetURL(ingestionURL)
+}
+
+// Activate
+func (i *Ingester) Activate() {
+	i.strategy.Activate()
 }

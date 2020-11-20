@@ -10,15 +10,17 @@ import (
 	"time"
 )
 
-func NewGroupStrategy(sdkInfo *core.SDKInfo, httpRequest HttpRequest) *GroupStrategy {
+func NewGroupStrategy(sdkInfo *core.SDKInfo, httpRequest HttpRequest, firstExposuresIngestThreshold int) *GroupStrategy {
 	ctx, cancel := context.WithCancel(context.Background())
 	gs := &GroupStrategy{
-		wg:          sync.WaitGroup{},
-		ingestionWg: sync.WaitGroup{},
-		ctx:         ctx,
-		cancel:      cancel,
+		wg:            sync.WaitGroup{},
+		ingestionWg:   sync.WaitGroup{},
+		retryPolicyWg: sync.WaitGroup{},
 
-		isActive: true,
+		ctx:    ctx,
+		cancel: cancel,
+
+		isActive: false,
 
 		httpRequest: httpRequest,
 		sdkInfo:     sdkInfo,
@@ -33,12 +35,19 @@ func NewGroupStrategy(sdkInfo *core.SDKInfo, httpRequest HttpRequest) *GroupStra
 		// to prevent stutter of the Publish function
 		retryPolicyChannel: make(chan *RetryPolicyRequest, 1000),
 
-		callCount:   0,
-		accumulator: make([]*IngestionDataRequest, 0, 100),
+		callCount:                     0,
+		firstExposuresIngestThreshold: firstExposuresIngestThreshold,
+		accumulator:                   make([]*IngestionDataRequest, 0, 100),
 	}
 	gs.wg.Add(1) // wait for ingester to initialize
 	gs.startWorker()
 	return gs
+}
+
+func (gs *GroupStrategy) shouldSendIngestionData(ingestionMaxCalls int, data *IngestionDataRequest) bool {
+	return (gs.callCount >= ingestionMaxCalls) ||
+		(len(data.DetectedFlags) > 0) ||
+		(len(data.Exposures) > 0 && gs.exposuresCount <= gs.firstExposuresIngestThreshold)
 }
 
 func (gs *GroupStrategy) startWorker() {
@@ -49,6 +58,7 @@ func (gs *GroupStrategy) startWorker() {
 			select {
 			case request := <-gs.retryPolicyChannel:
 				gs.retryPolicy.ingest(request)
+				gs.retryPolicyWg.Done()
 			case <-requestPolicyCtx.Done():
 				return
 			}
@@ -71,7 +81,11 @@ func (gs *GroupStrategy) startWorker() {
 				gs.callCount++
 				gs.ingestionWg.Done()
 
-				if gs.callCount >= ingestionMaxCalls {
+				if exposuresCount := len(data.Exposures); exposuresCount > 0 && (gs.exposuresCount <= gs.firstExposuresIngestThreshold) {
+					gs.exposuresCount += exposuresCount
+				}
+
+				if gs.shouldSendIngestionData(ingestionMaxCalls, data) {
 					gs.wg.Add(1)
 					gs.ingest(ingestionURL, func(err error) {
 						gs.wg.Done()
@@ -131,6 +145,7 @@ func (gs *GroupStrategy) ingest(ingestionURL string, callback RetryPolicyCallbac
 			httpRequest:  gs.httpRequest,
 			callback:     callback,
 		}
+		gs.retryPolicyWg.Add(1)
 		gs.retryPolicyChannel <- rpr
 	}
 	gs.callCount = 0
@@ -162,6 +177,12 @@ func (gs *GroupStrategy) SetURL(ingestionURL string) {
 	}
 }
 
+func (gs *GroupStrategy) Activate() {
+	gs.lock.Lock()
+	defer gs.lock.Unlock()
+	gs.isActive = true
+}
+
 // Important notes, this function
 // - waits for group strategy to be initialized(URL and sdkConfig are set)
 // - waits for current ingestion to finish
@@ -172,17 +193,26 @@ func (gs *GroupStrategy) ShutdownWithTimeout(timeout time.Duration) bool {
 	gs.lock.Lock()
 	if !gs.isActive {
 		defer gs.lock.Unlock()
-		return false // todo: refactor this, it's not beautiful solution to multiple ShutdownWithTimeout calls
+		return false
 	}
 	gs.isActive = false // stops new data to be published
 	gs.lock.Unlock()
 
-	waitTimeout(&gs.ingestionWg, timeout) // wait to read from ingestionDataChannel
+	start := time.Now()
+	// wait to read from ingestionDataChannel
+	waitTimeout(&gs.ingestionWg, timeout)
+
+	// wait to read from retryPolicyChannel
+	waitTimeout(&gs.retryPolicyWg, timeout)
+
+	if time.Since(start) > timeout {
+		return true
+	}
 
 	gs.wg.Add(1) // this is required because it could be that ingester has some data to send
 	gs.cancel()  // triggers gs.ctx.Done() async, that's why we add one more to waitGroup
 
-	timer := time.NewTimer(timeout)
+	timer := time.NewTimer(timeout - time.Since(start))
 	c := make(chan struct{})
 	go func() {
 		defer close(c)
@@ -191,12 +221,12 @@ func (gs *GroupStrategy) ShutdownWithTimeout(timeout time.Duration) bool {
 	select {
 	case <-c:
 		timer.Stop()
-		log.Debugf("All requests are finished")
+		log.Debugf("ShutdownWithTimeout is finished by sending all requests")
 		return false // completed normally
 	case <-timer.C:
 		timer.Stop()
 
-		log.Warnf("Some httpRequest are not finished, exited with a timeout")
+		log.Warnf("ShutdownWithTimeout exited with a timeout, some requests are not finished")
 		return true // timed out
 	}
 }

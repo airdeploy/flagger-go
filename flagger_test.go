@@ -3,14 +3,15 @@ package flagger
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"github.com/airdeploy/flagger-go/v3/sse"
 	"github.com/sirupsen/logrus"
 	"github.com/xeipuuv/gojsonschema"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
-	"sync"
 	"testing"
 	"time"
 
@@ -22,31 +23,19 @@ import (
 )
 
 const (
-	flagsURL      = "https://flags.airdeploy.io"
-	flagsPath     = "/v3/config/"
-	ingestionURL  = "https://ingestion.airdeploy.io"
-	ingestionPath = "/v3/ingest/"
-	apiKey        = "8CBohB03MC0zHlDj"
+	flagsURL       = "https://flags.airdeploy.io"
+	backupFlagsURL = "https://backup-api.airshiphq.com"
+	flagsPath      = "/v3/config/"
+	ingestionURL   = "https://ingestion.airdeploy.io"
+	ingestionPath  = "/v3/ingest/"
+	apiKey         = "8CBohB03MC0zHlDj"
 )
 
 func Test_validateIngestionSchema(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	catchIngestion(1)
+	defer gock.OffAll()
 
-	var configuration *core.Configuration
-	mustJSONOFile("configuration_ingestion.json", &configuration)
-
-	gock.New(flagsURL).
-		Get(flagsPath + apiKey).
-		Reply(200).
-		JSON(configuration)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	defer func() {
-		wg.Wait()
-		gock.OffAll() // WARNING: gock.OffAll() must executed after wg.Wait()
-	}()
+	count := 0
 
 	ingestionSchemaBuf, err := ioutil.ReadFile("ingestion.schema.json")
 	if err != nil {
@@ -78,20 +67,12 @@ func Test_validateIngestionSchema(t *testing.T) {
 				}
 			}
 
-			wg.Done()
+			count++
 			gock.Observe(nil)
 		}
 	})
 
-	gock.New(ingestionURL).
-		Post(ingestionPath + apiKey).
-		MatchType("json").
-		Reply(200)
-
-	flagger := NewFlagger()
-	assert.NotNil(t, flagger)
-
-	err = flagger.Init(ctx, &InitArgs{APIKey: apiKey})
+	flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
 	assert.NoError(t, err)
 
 	flagger.IsEnabled("test", &core.Entity{
@@ -109,7 +90,12 @@ func Test_validateIngestionSchema(t *testing.T) {
 		Attributes: map[string]interface{}{
 			"lastName": "Travolta",
 		},
-	}) // for least one ingestion
+	})
+
+	timeout := flagger.Shutdown(1 * time.Second)
+	assert.False(t, timeout)
+
+	assert.Equal(t, 1, count)
 }
 
 func TestFlagger_Init(t *testing.T) {
@@ -120,125 +106,107 @@ func TestFlagger_Init(t *testing.T) {
 	mustJSONOFile("configuration_ingestion.json", &configuration)
 
 	t.Run("empty APIKey", func(t *testing.T) {
-		gock.New(flagsURL).
-			Get(flagsPath + apiKey).
-			Reply(200).
-			JSON(configuration)
-		defer gock.OffAll()
-
 		flagger := NewFlagger()
 		assert.NotNil(t, flagger)
 
-		err := flagger.Init(ctx, &InitArgs{APIKey: ""})
+		err := flagger.Init(ctx, &InitArgs{APIKey: "", SSEURL: "http://localhost:8000/v3/sse"})
 		assert.Equal(t, ErrBadInitArgs, err)
 	})
 
 	t.Run("positive", func(t *testing.T) {
-		gock.New(flagsURL).
-			Get(flagsPath + apiKey).
-			Reply(200).
-			JSON(configuration)
 		defer gock.OffAll()
 
-		flagger := NewFlagger()
-		assert.NotNil(t, flagger)
+		catchIngestion(1)
 
-		err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
-		assert.NoError(t, err)
-
-		flagger.ingester.SetConfig(&core.SDKConfig{
-			SDKIngestionInterval: 60,
-			SDKIngestionMaxItems: 0,
-		})
+		flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+		assert.Nil(t, err)
 
 		ok := flagger.IsEnabled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
 		assert.True(t, ok)
 
-		time.Sleep(100 * time.Millisecond) // await for ingestion
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
 	})
 
-	t.Run("second call with same args", func(t *testing.T) {
-		gock.New(flagsURL).
-			Get(flagsPath + apiKey).
-			Times(2).
-			Reply(200).
-			JSON(configuration)
+	t.Run("second call with same arguments triggers ingestion", func(t *testing.T) {
 		defer gock.OffAll()
+		catchIngestion(2)
+
+		count := 0
+		gock.Observe(func(request *http.Request, mock gock.Mock) {
+			// catch ingestion
+			if request.Method == http.MethodPost {
+				count++
+				if count == 2 {
+					gock.Observe(nil)
+				}
+			}
+		})
 
 		flagger := NewFlagger()
 		assert.NotNil(t, flagger)
 
-		err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
+		flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
 		assert.NoError(t, err)
-
-		flagger.ingester.SetConfig(&core.SDKConfig{
-			SDKIngestionInterval: 60,
-			SDKIngestionMaxItems: 0,
-		})
 
 		ok := flagger.IsEnabled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
 		assert.True(t, ok)
 
-		err = flagger.Init(ctx, &InitArgs{APIKey: apiKey})
+		flagger, err = initFlaggerInstance(apiKey, "configuration_ingestion.json")
 		assert.NoError(t, err)
-
-		flagger.ingester.SetConfig(&core.SDKConfig{
-			SDKIngestionInterval: 60,
-			SDKIngestionMaxItems: 0,
-		})
 
 		ok = flagger.IsEnabled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
 		assert.True(t, ok)
 
-		time.Sleep(100 * time.Millisecond) // await for ingestion
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
+
+		assert.Equal(t, 2, count)
 	})
 
-	t.Run("second call with fake APIKey", func(t *testing.T) {
+	t.Run("wrong apiKey results in flag functions false", func(t *testing.T) {
+
+		apiKeyNotFound := errors.New("API keys not found")
+		wrongApiKey := "wrongApiKey"
+
+		// flagger tries to get config from source 3 times
 		gock.New(flagsURL).
-			Get(flagsURL + apiKey).
-			Reply(200).
-			JSON(configuration)
+			Get(flagsPath + wrongApiKey).
+			Times(3).
+			ReplyError(apiKeyNotFound)
+
+		// flagger tries to get config from backup-source 3 times
+		gock.New(backupFlagsURL).
+			Get(flagsPath + wrongApiKey).
+			Times(3).
+			ReplyError(apiKeyNotFound)
+
 		defer gock.OffAll()
 
 		flagger := NewFlagger()
 		assert.NotNil(t, flagger)
 
-		err := flagger.Init(ctx, &InitArgs{APIKey: "fakeAPIKey"})
-		assert.NoError(t, err)
+		err := flagger.Init(ctx, &InitArgs{APIKey: wrongApiKey, SSEURL: "http://localhost:8000/v3/sse"})
+		assert.NotNil(t, err)
+		assert.Error(t, err, apiKeyNotFound)
 
-		flagger.ingester.SetConfig(&core.SDKConfig{
-			SDKIngestionInterval: 60,
-			SDKIngestionMaxItems: 0,
-		})
+		assert.False(t, flagger.IsEnabled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"}))
+		assert.False(t, flagger.IsSampled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"}))
+		assert.Equal(t, core.Payload{}, flagger.GetPayload("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"}))
+		assert.Equal(t, "off", flagger.GetVariation("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"}))
 
-		ok := flagger.IsEnabled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
-		assert.False(t, ok)
-
-		time.Sleep(100 * time.Millisecond) // await for ingestion
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
 	})
 }
 
 func TestSetEntity(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+	defer gock.OffAll()
 
-	var configuration *core.Configuration
-	mustJSONOFile("configuration_ingestion.json", &configuration)
+	catchIngestion(4)
 
-	gock.New(flagsURL).
-		Get(flagsPath + apiKey).
-		Reply(200).
-		JSON(configuration)
-
-	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
-	logrus.SetLevel(logrus.DebugLevel)
-	assert.NoError(t, err)
-
-	flagger.ingester.SetConfig(&core.SDKConfig{
-		SDKIngestionInterval: 60,
-		SDKIngestionMaxItems: 0,
-	})
+	flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+	assert.Nil(t, err)
 
 	flagger.SetEntity(&core.Entity{ID: "90843823"})
 	enabled := flagger.IsEnabled("new-signup-flow", nil)
@@ -252,7 +220,8 @@ func TestSetEntity(t *testing.T) {
 	assert.False(t, disabled)
 	assert.Equal(t, "off", off)
 
-	time.Sleep(100 * time.Millisecond) // await for ingestion
+	timeout := flagger.Shutdown(1 * time.Second)
+	assert.False(t, timeout)
 }
 
 func TestFlagger_Track(t *testing.T) {
@@ -260,24 +229,10 @@ func TestFlagger_Track(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		var configuration *core.Configuration
-		mustJSONOFile("configuration_ingestion.json", &configuration)
+		catchIngestion(1)
+		defer gock.OffAll()
 
-		gock.New(flagsURL).
-			Get(flagsPath + apiKey).
-			Reply(200).
-			JSON(configuration)
-		gock.New(ingestionURL).
-			Post(ingestionPath + apiKey).
-			Reply(200)
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-		defer func() {
-			wg.Wait()
-			gock.OffAll() // WARNING: gock.OffAll() must executed after wg.Wait()
-		}()
-
+		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
 			// catch ingestion
 			if request.Method == http.MethodPost {
@@ -296,14 +251,13 @@ func TestFlagger_Track(t *testing.T) {
 					assert.Equal(t, "test", data.Events[0].Name)
 				}
 
-				wg.Done()
+				count++
 				gock.Observe(nil)
 			}
 		})
 
-		flagger := NewFlagger()
-		err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
-		assert.NoError(t, err)
+		flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+		assert.Nil(t, err)
 
 		flagger.Track(ctx, &core.Event{
 			Name: "test",
@@ -314,31 +268,22 @@ func TestFlagger_Track(t *testing.T) {
 			},
 			Entity: &core.Entity{ID: "1"},
 		})
+
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
+
+		assert.Equal(t, 1, count)
 	})
 
 	t.Run("with default Entity", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		var configuration *core.Configuration
-		mustJSONOFile("configuration_ingestion.json", &configuration)
+		catchIngestion(1)
 
-		gock.New(flagsURL).
-			Get(flagsPath + apiKey).
-			Reply(200).
-			JSON(configuration)
+		defer gock.OffAll()
 
-		gock.New(ingestionURL).
-			Post(ingestionPath + apiKey).
-			Reply(200)
-
-		var wg sync.WaitGroup
-		wg.Add(1)
-		defer func() {
-			wg.Wait()
-			gock.OffAll() // WARNING: gock.OffAll() must executed after wg.Wait()
-		}()
-
+		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
 			// catch ingestion
 			if request.Method == http.MethodPost {
@@ -356,14 +301,13 @@ func TestFlagger_Track(t *testing.T) {
 				}
 				assert.Len(t, r.Events, 1)
 
-				wg.Done()
+				count++
 				gock.Observe(nil)
 			}
 		})
 
-		flagger := NewFlagger()
-		err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
-		assert.NoError(t, err)
+		flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+		assert.Nil(t, err)
 
 		flagger.SetEntity(&core.Entity{ID: "1"})
 		flagger.Track(ctx, &core.Event{
@@ -374,32 +318,21 @@ func TestFlagger_Track(t *testing.T) {
 				"shirt_size": "medium",
 			},
 		})
+
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
+
+		assert.Equal(t, 1, count)
 	})
 }
 
 func TestFlagger_Publish(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	catchIngestion(1)
+	defer gock.OffAll()
 
-	var configuration *core.Configuration
-	mustJSONOFile("configuration_ingestion.json", &configuration)
-
-	gock.New(flagsURL).
-		Get(flagsPath + apiKey).
-		Reply(200).
-		JSON(configuration)
-
-	gock.New(ingestionURL).
-		Post(ingestionPath + apiKey).
-		Reply(200)
-
-	var wg sync.WaitGroup
-	wg.Add(1)
-	defer func() {
-		wg.Wait()
-		gock.OffAll() // WARNING: gock.OffAll() must executed after wg.Wait()
-	}()
-
+	count := 0
 	gock.Observe(func(request *http.Request, mock gock.Mock) {
 		// catch ingestion
 		if request.Method == http.MethodPost {
@@ -416,176 +349,126 @@ func TestFlagger_Publish(t *testing.T) {
 				assert.Equal(t, "User", r.Entities[0].Type)
 			}
 
-			wg.Done()
+			count++
 			gock.Observe(nil)
 		}
 	})
 
-	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
-	assert.NoError(t, err)
+	flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+	assert.Nil(t, err)
 
 	flagger.Publish(ctx, &core.Entity{ID: "54"})
+
+	timeout := flagger.Shutdown(1 * time.Second)
+	assert.False(t, timeout)
+
+	assert.Equal(t, 1, count)
 }
 
-func TestFlagger_IsEnabled(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+func TestFlagFunctions(t *testing.T) {
+	t.Run("IsEnabled", func(t *testing.T) {
+		defer gock.OffAll()
+		catchIngestion(2)
 
-	var configuration *core.Configuration
-	mustJSONOFile("configuration_ingestion.json", &configuration)
+		flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+		assert.NoError(t, err)
 
-	gock.New(flagsURL).
-		Get(flagsPath + apiKey).
-		Reply(200).
-		JSON(configuration)
-	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
+		codename := "new-signup-flow"
+		assert.True(t, flagger.IsEnabled(codename, &core.Entity{
+			ID: "1",
+			Attributes: map[string]interface{}{
+				"country":  "France",
+				"bday":     "2016-03-16T05:44:23.000Z",
+				"age":      42,
+				"booleans": false,
+			},
+		}))
 
-	assert.NoError(t, err)
+		assert.False(t, flagger.IsEnabled(codename, &core.Entity{
+			ID: "2",
+			Attributes: map[string]interface{}{
+				"country": "USA",
+			},
+		}))
 
-	codename := "new-signup-flow"
-	assert.True(t, flagger.IsEnabled(codename, &core.Entity{
-		ID: "1",
-		Attributes: map[string]interface{}{
-			"country":  "France",
-			"bday":     "2016-03-16T05:44:23.000Z",
-			"age":      42,
-			"booleans": false,
-		},
-	}))
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
 
-	assert.False(t, flagger.IsEnabled(codename, &core.Entity{
-		ID: "2",
-		Attributes: map[string]interface{}{
-			"country": "USA",
-		},
-	}))
-}
-
-func TestFlagger_IsSampled(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	var configuration *core.Configuration
-	mustJSONOFile("configuration_ingestion.json", &configuration)
-
-	gock.New(flagsURL).
-		Get(flagsPath + apiKey).
-		Reply(200).
-		JSON(configuration)
-	defer gock.OffAll()
-
-	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
-	assert.NoError(t, err)
-
-	flagger.ingester.SetConfig(&core.SDKConfig{
-		SDKIngestionInterval: 60,
-		SDKIngestionMaxItems: 0,
 	})
 
-	entity := &core.Entity{
-		ID:         "kfjvv3",
-		Attributes: core.Attributes{"admin": true},
-	}
+	t.Run("IsSampled", func(t *testing.T) {
+		defer gock.OffAll()
 
-	sampled := flagger.IsSampled("premium-support", entity)
-	assert.True(t, sampled)
+		catchIngestion(2)
 
-	//group
-	assert.True(t, flagger.IsSampled("org-chart", &core.Entity{
-		ID:   "14",
-		Type: "User",
-		Group: &core.Group{
-			ID:   "15",
-			Type: "Company",
-		},
-	}))
+		flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+		assert.NoError(t, err)
 
-	variation := flagger.GetVariation("premium-support", entity)
-	assert.Equal(t, "enabled", variation)
+		entity := &core.Entity{
+			ID:         "kfjvv3",
+			Attributes: core.Attributes{"admin": true},
+		}
 
-	time.Sleep(100 * time.Millisecond) // await for ingestion
-}
+		sampled := flagger.IsSampled("premium-support", entity)
+		assert.True(t, sampled)
 
-func TestFlagger_GetPayload(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+		//group
+		assert.True(t, flagger.IsSampled("org-chart", &core.Entity{
+			ID:   "14",
+			Type: "User",
+			Group: &core.Group{
+				ID:   "15",
+				Type: "Company",
+			},
+		}))
 
-	var configuration *core.Configuration
-	mustJSONOFile("configuration_ingestion.json", &configuration)
-
-	gock.New(flagsURL).
-		Get(flagsPath + apiKey).
-		Reply(200).
-		JSON(configuration)
-	defer gock.OffAll()
-
-	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
-	assert.NoError(t, err)
-
-	flagger.ingester.SetConfig(&core.SDKConfig{
-		SDKIngestionInterval: 60,
-		SDKIngestionMaxItems: 0,
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
 	})
 
-	payload := flagger.GetPayload("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
-	assert.Equal(t, "on", payload["newFeature"])
+	t.Run("GetPayload", func(t *testing.T) {
+		defer gock.OffAll()
 
-	time.Sleep(100 * time.Millisecond) // await for ingestion
-}
+		catchIngestion(1)
 
-func TestFlagger_GetVariation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
+		flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+		assert.NoError(t, err)
 
-	var configuration *core.Configuration
-	mustJSONOFile("configuration_ingestion.json", &configuration)
+		payload := flagger.GetPayload("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
+		assert.Equal(t, "on", payload["newFeature"])
 
-	gock.New(flagsURL).
-		Get(flagsPath + apiKey).
-		Reply(200).
-		JSON(configuration)
-	defer gock.OffAll()
-
-	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
-	assert.NoError(t, err)
-
-	flagger.ingester.SetConfig(&core.SDKConfig{
-		SDKIngestionInterval: 60,
-		SDKIngestionMaxItems: 0,
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
 	})
 
-	variation := flagger.GetVariation("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
-	assert.Equal(t, "enabled", variation)
+	t.Run("GetVariation", func(t *testing.T) {
 
-	time.Sleep(100 * time.Millisecond) // await for ingestion
+		gock.New(ingestionURL).
+			Post(ingestionPath + apiKey).
+			Reply(200)
+
+		defer gock.OffAll()
+
+		flagger, err := initFlaggerInstance(apiKey, "configuration_ingestion.json")
+		assert.NoError(t, err)
+
+		variation := flagger.GetVariation("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
+		assert.Equal(t, "enabled", variation)
+
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
+	})
 }
 
 func TestFilters(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	var configuration *core.Configuration
-	mustJSONOFile("configuration.json", &configuration)
-
-	gock.New(flagsURL).
-		Get(flagsPath + apiKey).
-		Reply(200).
-		JSON(configuration)
 	defer gock.OffAll()
+	gock.New(ingestionURL).
+		Post(ingestionPath + apiKey).
+		Times(6).
+		Reply(200)
 
-	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
+	flagger, err := initFlaggerInstance(apiKey, "configuration.json")
 	assert.NoError(t, err)
-
-	flagger.ingester.SetConfig(&core.SDKConfig{
-		SDKIngestionInterval: 60,
-		SDKIngestionMaxItems: 0,
-	})
 
 	t.Run("positive test", func(t *testing.T) {
 
@@ -643,17 +526,23 @@ func TestFilters(t *testing.T) {
 		})
 	})
 
+	timeout := flagger.Shutdown(1 * time.Second)
+	assert.False(t, timeout)
 }
 
-// dynamic-pricing flag killSwitch is on at source(configuration.json) but off at sse(configuration_sse.json)
+// dynamic-pricing flag killSwitch is on at source(configuration.json) but off at sse
 func TestFlagger_SSE(t *testing.T) {
+	defer gock.OffAll()
+	catchIngestion(1)
 	flaggerConfigMessage := getConfigMessage()
 	ctx := context.Background()
 	ctx, done := context.WithCancel(ctx)
 
 	broker := sse.NewSSEServer(ctx, flaggerConfigMessage)
+
+	ssePort := "3101"
 	go func() {
-		log.Fatal("HTTP server error: ", http.ListenAndServe("localhost:3100", broker))
+		log.Fatal("HTTP server error: ", http.ListenAndServe("localhost:"+ssePort, broker))
 	}()
 
 	time.Sleep(10 * time.Millisecond)
@@ -664,10 +553,9 @@ func TestFlagger_SSE(t *testing.T) {
 		Get(flagsPath + apiKey).
 		Reply(200).
 		JSON(configuration)
-	defer gock.OffAll()
 
 	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey, SSEURL: "http://localhost:3100/"})
+	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey, SSEURL: "http://localhost:" + ssePort + "/"})
 	assert.NoError(t, err)
 
 	time.Sleep(100 * time.Millisecond)
@@ -678,10 +566,11 @@ func TestFlagger_SSE(t *testing.T) {
 	}
 
 	// dynamic-pricing isKill
-	sampled := flagger.IsSampled("dynamic-pricing", entity)
-	assert.True(t, sampled)
+	assert.True(t, flagger.IsSampled("dynamic-pricing", entity))
 	done()
-	time.Sleep(10 * time.Millisecond)
+
+	timeout := flagger.Shutdown(1 * time.Second)
+	assert.False(t, timeout)
 }
 
 func TestCustomURLS(t *testing.T) {
@@ -707,6 +596,7 @@ func TestCustomURLS(t *testing.T) {
 		APIKey:       apiKey,
 		SourceURL:    customURL + "/" + apiKey,
 		IngestionURL: customURL + "/ingest/" + apiKey,
+		SSEURL:       "http://localhost:8000/v3/sse",
 	})
 	assert.NoError(t, err)
 
@@ -728,13 +618,14 @@ func TestCustomURLS(t *testing.T) {
 func TestShutdown(t *testing.T) {
 	t.Run("Shutdown makes all flag functions return default variation", func(t *testing.T) {
 		defer gock.OffAll()
+		catchIngestion(1)
 		flagger, err := initFlaggerInstance("fdsfsdf3ofsf", "configuration.json")
 		assert.NoError(t, err)
 
 		ok := flagger.IsEnabled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
 		assert.True(t, ok)
 
-		flagger.Shutdown(1000)
+		flagger.Shutdown(1 * time.Second)
 
 		notOk := flagger.IsEnabled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
 		assert.False(t, notOk)
@@ -747,29 +638,108 @@ func TestShutdown(t *testing.T) {
 		flagger, err := initFlaggerInstance(apiKey, "configuration.json")
 		assert.NoError(t, err)
 
-		timeout := flagger.Shutdown(1000 * time.Millisecond)
+		timeout := flagger.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
 
-		var configuration *core.Configuration
-		mustJSONOFile("configuration.json", &configuration)
-		gock.New(flagsURL).
-			Get(flagsPath + apiKey).
-			Reply(200).
-			JSON(configuration)
-		gock.New(ingestionURL).
-			Post(ingestionPath + apiKey).
-			Reply(200)
+		catchIngestion(1)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		err = flagger.Init(ctx, &InitArgs{APIKey: apiKey, IngestionURL: defaultIngestionURL + apiKey})
+		flagger, err = initFlaggerInstance(apiKey, "configuration.json")
 		assert.NoError(t, err)
 
 		ok := flagger.IsEnabled("enterprise-dashboard", &core.Entity{ID: "31404847", Type: "Company"})
 		assert.True(t, ok)
 
-		timeout = flagger.Shutdown(1000 * time.Millisecond)
+		timeout = flagger.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
+
+	})
+}
+
+func TestIngestion(t *testing.T) {
+
+	t.Run("First 10 exposures are always ingested", func(t *testing.T) {
+		defer gock.OffAll()
+		flagger, err := initFlaggerInstance(apiKey, "configuration.json")
+		assert.NoError(t, err)
+
+		gock.New(ingestionURL).
+			Post(ingestionPath + apiKey).
+			Times(11).
+			Reply(200)
+
+		count := 0
+		gock.Observe(func(request *http.Request, mock gock.Mock) {
+			// catch ingestion
+			if request.Method == http.MethodPost {
+				count++
+				if count == 11 {
+					gock.Observe(nil)
+				}
+			}
+		})
+
+		for i := 0; i < 12; i++ {
+			flagger.IsEnabled("new-signup-flow", &core.Entity{
+				ID: "1",
+			})
+		}
+
+		time.Sleep(100 * time.Millisecond)
+
+		assert.Equal(t, 10, count)
+
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
+		assert.Equal(t, 11, count)
+
+	})
+
+	t.Run("Detected flags always ingested", func(t *testing.T) {
+		defer gock.OffAll()
+		flagger, err := initFlaggerInstance(apiKey, "configuration.json")
+		assert.NoError(t, err)
+
+		firstExposuresIngestThreshold := 10
+		detectedFlagCount := 7
+
+		totalIngestedFlags := firstExposuresIngestThreshold + detectedFlagCount
+
+		gock.New(ingestionURL).
+			Post(ingestionPath + apiKey).
+			Times(totalIngestedFlags).
+			Reply(200)
+
+		count := 0
+		gock.Observe(func(request *http.Request, mock gock.Mock) {
+			// catch ingestion
+			if request.Method == http.MethodPost {
+				count++
+				if count == totalIngestedFlags {
+					gock.Observe(nil)
+				}
+			}
+		})
+
+		// ingesting first 10 exposures
+		for i := 0; i < firstExposuresIngestThreshold; i++ {
+			flagger.IsEnabled("new-signup-flow", &core.Entity{
+				ID: "1",
+			})
+		}
+
+		time.Sleep(100 * time.Millisecond)
+
+		assert.Equal(t, firstExposuresIngestThreshold, count)
+
+		for i := 0; i < detectedFlagCount; i++ {
+			flagger.IsEnabled("new-flag-"+randomString(10), &core.Entity{
+				ID: "1",
+			})
+		}
+
+		timeout := flagger.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
+		assert.Equal(t, totalIngestedFlags, count)
 
 	})
 }
@@ -787,7 +757,7 @@ func initFlaggerInstance(apiKey, configFileName string) (*Flagger, error) {
 		JSON(configuration)
 
 	flagger := NewFlagger()
-	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey})
+	err := flagger.Init(ctx, &InitArgs{APIKey: apiKey, SSEURL: "http://localhost:8000/v3/sse"})
 	return flagger, err
 }
 
@@ -814,4 +784,21 @@ func getConfigMessage() []byte {
 	flaggerConfigMessage = append(flaggerConfigMessage, config...)
 	flaggerConfigMessage = append(flaggerConfigMessage, []byte("\n\n")...)
 	return flaggerConfigMessage
+}
+
+func randomString(n int) string {
+	var letter = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letter[rand.Intn(len(letter))]
+	}
+	return string(b)
+}
+
+func catchIngestion(times int) {
+	gock.New(ingestionURL).
+		Post(ingestionPath + apiKey).
+		Times(times).
+		Reply(200)
 }
