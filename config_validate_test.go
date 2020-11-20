@@ -193,6 +193,26 @@ func Test_prepareInitArgs(t *testing.T) {
 		_, _, err := prepareInitArgs(args, SDKInfo)
 		assert.Equal(t, ErrBadInitArgs, err)
 	})
+
+	t.Run("Custom URLs", func(t *testing.T) {
+		sourceURL := "https://flags.airdeploy.io/v3/config/"
+		apiKey := "apikey"
+		backupSourceURL := "https://backup-api.airshiphq.com/v3/config/"
+		ingestionURL := "https://ingestion.airdeploy.io/v3/ingest/"
+		sseURL := "https://sse.airdeploy.io/v3/sse/"
+		args := &InitArgs{
+			APIKey:          apiKey,
+			SourceURL:       sourceURL,
+			BackupSourceURL: backupSourceURL,
+			IngestionURL:    ingestionURL,
+			SSEURL:          sseURL,
+		}
+		args, _, _ = prepareInitArgs(args, SDKInfo)
+		assert.Equal(t, args.SourceURL, sourceURL+apiKey)
+		assert.Equal(t, args.BackupSourceURL, backupSourceURL+apiKey)
+		assert.Equal(t, args.IngestionURL, ingestionURL+apiKey)
+		assert.Equal(t, args.SSEURL, sseURL+apiKey)
+	})
 }
 
 func TestInitArgs_copy(t *testing.T) {

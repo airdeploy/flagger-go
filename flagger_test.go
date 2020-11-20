@@ -705,8 +705,8 @@ func TestCustomURLS(t *testing.T) {
 	flagger := NewFlagger()
 	err := flagger.Init(ctx, &InitArgs{
 		APIKey:       apiKey,
-		SourceURL:    customURL + "/",
-		IngestionURL: customURL + "/ingest/",
+		SourceURL:    customURL + "/" + apiKey,
+		IngestionURL: customURL + "/ingest/" + apiKey,
 	})
 	assert.NoError(t, err)
 

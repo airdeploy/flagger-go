@@ -115,6 +115,7 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 // returns true if closed by timeout
 func (flagger *Flagger) Shutdown(timeout time.Duration) bool {
 	flagger.core.SetConfig(nil)
+	flagger.core.SetEntity(nil)
 	flagger.sse.Shutdown()
 	if flagger.ingester != nil {
 		return flagger.ingester.Shutdown(timeout)
