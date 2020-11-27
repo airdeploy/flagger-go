@@ -1,17 +1,15 @@
 package flagger
 
 import (
-	"fmt"
-	"net/url"
-
 	"github.com/airdeploy/flagger-go/v3/core"
+	"github.com/airdeploy/flagger-go/v3/internal/httputils"
 )
 
 var (
-	// SDKInfo represent meta information. do not modify this!
+	// SDKInfo represent meta information
 	SDKInfo = &core.SDKInfo{
 		Name:    "golang",
-		Version: "3.0.0",
+		Version: "3.0.9",
 	}
 
 	defaultSDKConfig = &core.SDKConfig{
@@ -20,16 +18,8 @@ var (
 	}
 
 	defaultAttemptsConnection = 2
-	defaultSourceURL          = mustURL("https://flags.airdeploy.io/v3/config/")
-	defaultBackupSourceURL    = mustURL("https://backup-api.airshiphq.com/v3/config/")
-	defaultSSEURL             = mustURL("https://sse.airdeploy.io/v3/sse/")
-	defaultIngestionURL       = mustURL("https://ingestion.airdeploy.io/v3/ingest/")
+	defaultSourceURL          = httputils.MustURL("https://flags.airdeploy.io/v3/config/")
+	defaultBackupSourceURL    = httputils.MustURL("https://backup-api.airshiphq.com/v3/config/")
+	defaultSSEURL             = httputils.MustURL("https://sse.airdeploy.io/v3/sse/")
+	defaultIngestionURL       = httputils.MustURL("https://ingestion.airdeploy.io/v3/ingest/")
 )
-
-func mustURL(u string) string {
-	_, err := url.Parse(u)
-	if err != nil {
-		panic(fmt.Sprintf("bad url: %s", u))
-	}
-	return u
-}

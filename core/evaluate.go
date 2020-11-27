@@ -16,46 +16,46 @@ type FlagResult struct {
 type Reason string
 
 const (
-	// NoEntityProvided represent flag reason for witch have no entity for calculating
+	// NoEntityProvided - no entity is provided to flagger
 	NoEntityProvided Reason = "No entity provided to Flagger"
 
-	// ConfigIsEmpty
+	// FlaggerIsNotInitialized - Flagger is not initialized
 	FlaggerIsNotInitialized Reason = "Flagger is not initialized"
 
-	// ConfigIsEmpty
+	// ConfigIsEmpty - no flags in the current config
 	ConfigIsEmpty Reason = "No flags in the current config"
 
-	// CodenameIsEmpty
+	// CodenameIsEmpty - flag codename is empty
 	CodenameIsEmpty Reason = "Flag codename is empty"
 
-	// IdIsEmpty
-	IdIsEmpty Reason = "Id is empty"
+	// IDIsEmpty - entity id is empty
+	IDIsEmpty Reason = "Id is empty"
 
-	// FlagNotInConfig
+	// FlagNotInConfig flag is missing in configuration
 	FlagNotInConfig Reason = "Flag is not in the current config"
 
-	// KillSwitchEngaged
+	// KillSwitchEngaged - kill switch engaged
 	KillSwitchEngaged Reason = "Kill switch engaged"
 
-	// IndividualBlacklist
+	// IndividualBlacklist - Entity is individually blacklisted
 	IndividualBlacklist Reason = "Entity is individually blacklisted"
 
-	// IndividualWhitelist
+	// IndividualWhitelist - Entity is individually whitelisted
 	IndividualWhitelist Reason = "Entity is individually whitelisted"
 
-	// GroupBlacklist
+	// GroupBlacklist - Entity's group is blacklisted
 	GroupBlacklist Reason = "Entity's group is blacklisted"
 
-	// GroupWhitelist
+	// GroupWhitelist - Entity's group is whitelisted
 	GroupWhitelist Reason = "Entity's group is whitelisted"
 
-	// IsSampled
+	// IsSampled - Entity is sampled in the individual subpopulation
 	IsSampled Reason = "Entity is sampled in the individual subpopulation"
 
-	// IsSampledByGroup
+	// IsSampledByGroup - Entity is sampled in the group subpopulation
 	IsSampledByGroup Reason = "Entity is sampled in the group subpopulation"
 
-	// Default
+	// Default - Default (off) treatment reached
 	Default Reason = "Default (off) treatment reached"
 )
 

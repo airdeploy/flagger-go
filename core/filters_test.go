@@ -5,7 +5,6 @@ import (
 	"log"
 	"math"
 	"math/rand"
-	"strconv"
 	"testing"
 	"time"
 
@@ -94,7 +93,7 @@ func Test_matchByFilters(t *testing.T) {
 	})
 
 	t.Run("type mismatch", func(t *testing.T) {
-		t.Run("pos1", func(t *testing.T) {
+		t.Run("filter's value is int, which could not be parsed from string by json, so false", func(t *testing.T) {
 			age := randInt()
 			assert.False(t, matchByFilters(
 				[]*FlagFilter{
@@ -105,31 +104,159 @@ func Test_matchByFilters(t *testing.T) {
 						FilterType:    filterTypeNumber,
 					},
 				},
-				randAttributes(
-					add("age", strconv.Itoa(age)),
-				)))
+				randAttributes()))
 		})
-
-		t.Run("pos2", func(t *testing.T) {
+		t.Run("filter is float, attribute is string", func(t *testing.T) {
 			assert.False(t, matchByFilters(
 				[]*FlagFilter{
 					{
 						AttributeName: "probability",
 						Operator:      is,
-						Value:         randInt(),
+						Value:         randFloat(),
 						FilterType:    filterTypeNumber,
 					},
 				},
 				randAttributes(
-					add("probability", randFloat()),
+					add("probability", randCountry()),
 				)))
+		})
+		t.Run("filter is []float, attribute is string", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "probability",
+						Operator:      in,
+						Value:         []float64{0.95, .5},
+						FilterType:    filterTypeNumber,
+					},
+				},
+				randAttributes(
+					add("probability", randCountry()),
+				)))
+		})
+
+		t.Run("filter is string, attribute is integer", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "country",
+						Operator:      is,
+						Value:         randCountry(),
+						FilterType:    filterTypeString,
+					},
+				},
+				randAttributes(
+					add("country", randInt()),
+				)))
+		})
+		t.Run("filter is []string, attribute is integer", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "country",
+						Operator:      in,
+						Value:         []string{randCountry()},
+						FilterType:    filterTypeBool,
+					},
+				},
+				randAttributes(
+					add("country", randInt()),
+				)))
+		})
+
+		t.Run("filter is bool, attribute is integer", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "isAdmin",
+						Operator:      is,
+						Value:         randBool(),
+						FilterType:    filterTypeBool,
+					},
+				},
+				randAttributes(
+					add("isAdmin", randInt()),
+				)))
+		})
+		t.Run("filter is []bool, attribute is integer", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "isAdmin",
+						Operator:      in,
+						Value:         []bool{true, false},
+						FilterType:    filterTypeBool,
+					},
+				},
+				randAttributes(
+					add("isAdmin", randInt()),
+				)))
+		})
+
+		t.Run("invalid filter value after parsing: unit", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "admin",
+						Operator:      is,
+						Value:         uint8(1),
+						FilterType:    filterTypeBool,
+					},
+				},
+				randAttributes()))
+		})
+		t.Run("invalid filter value after parsing: json unmarshal number to []float64, not []int", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "age",
+						Operator:      in,
+						Value:         []int{32, 64, 128},
+						FilterType:    filterTypeNumber,
+					},
+				},
+				randAttributes()))
+		})
+
+		t.Run("but flagger recover types", func(t *testing.T) {
+			t.Run("filter is float64, attribute is int => true", func(t *testing.T) {
+				v := float64(1)
+				assert.True(t, matchByFilters(
+					[]*FlagFilter{
+						{
+							AttributeName: "probability",
+							Operator:      is,
+							Value:         v,
+							FilterType:    filterTypeNumber,
+						},
+					},
+					randAttributes(
+						add("probability", int(v)),
+					)))
+			})
+
+			t.Run("filter is float64, attribute is int => true", func(t *testing.T) {
+				v := float64(1)
+				assert.True(t, matchByFilters(
+					[]*FlagFilter{
+						{
+							AttributeName: "probability",
+							Operator:      is,
+							Value:         v,
+							FilterType:    filterTypeNumber,
+						},
+					},
+					randAttributes(
+						add("probability", float32(v)),
+					)))
+			})
 		})
 	})
 
 	t.Run("is", func(t *testing.T) {
 		t.Run("string", func(t *testing.T) {
 
-			t.Run("pos1", func(t *testing.T) {
+			t.Run("countries are equal", func(t *testing.T) {
 				country := randCountry()
 				assert.True(t, matchByFilters(
 					[]*FlagFilter{
@@ -145,7 +272,7 @@ func Test_matchByFilters(t *testing.T) {
 					)))
 			})
 
-			t.Run("neg1", func(t *testing.T) {
+			t.Run("countries don't match", func(t *testing.T) {
 				country := randCountry()
 				assert.False(t, matchByFilters(
 					[]*FlagFilter{
@@ -370,6 +497,20 @@ func Test_matchByFilters(t *testing.T) {
 							{
 								AttributeName: "createdAt",
 								Operator:      is,
+								Value:         createdAt,
+								FilterType:    filterTypeDate,
+							},
+						},
+						randAttributes(
+							add("createdAt", "2019-09-16T05:44:23Z"),
+						)))
+				})
+				t.Run("values don't match", func(t *testing.T) {
+					assert.False(t, matchByFilters(
+						[]*FlagFilter{
+							{
+								AttributeName: "createdAt",
+								Operator:      in,
 								Value:         createdAt,
 								FilterType:    filterTypeDate,
 							},
@@ -722,6 +863,93 @@ func Test_matchByFilters(t *testing.T) {
 					"createdAt": now.Add(5 * time.Hour).Format(time.RFC3339),
 				}))
 		})
+
+		t.Run("string", func(t *testing.T) {
+			t.Run("wrong operator", func(t *testing.T) {
+				country := randCountry()
+				assert.False(t, matchByFilters(
+					[]*FlagFilter{
+						{
+							AttributeName: "country",
+							Operator:      lt,
+							Value:         country,
+							FilterType:    filterTypeString,
+						},
+					},
+					randAttributes(
+						add("country", randCountryNEq(country)),
+					)))
+			})
+		})
+
+		t.Run("wrong operator for []time", func(t *testing.T) {
+			now1 := randTS()
+			now2 := randTSNEq(now1)
+			now3 := randTSNEq(now2)
+
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "createdAt",
+						Operator:      lt,
+						Value:         []time.Time{now1, now2},
+						FilterType:    filterTypeNumber,
+					},
+				},
+				Attributes{
+					"country":   "JP",
+					"createdAt": now3.Format(time.RFC3339),
+				}))
+		})
+
+		t.Run("wrong operator for []float64", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "probability",
+						Operator:      lt,
+						Value:         []float64{0.1, 0.2},
+						FilterType:    filterTypeNumber,
+					},
+				},
+				Attributes{
+					"country":     "JP",
+					"age":         20,
+					"probability": 0.3,
+				}))
+		})
+
+		t.Run("wrong operator for bool", func(t *testing.T) {
+			admin := randBool()
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "admin",
+						Operator:      lt,
+						Value:         admin,
+						FilterType:    filterTypeBool,
+					},
+				},
+				randAttributes(
+					add("admin", admin),
+				)))
+		})
+
+		t.Run("wrong operator for []bool", func(t *testing.T) {
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "admin",
+						Operator:      lt,
+						Value:         []bool{true},
+						FilterType:    filterTypeBool,
+					},
+				},
+				randAttributes(
+					add("admin", true),
+				)),
+			)
+		})
 	})
 
 	t.Run("lte", func(t *testing.T) {
@@ -780,7 +1008,7 @@ func Test_matchByFilters(t *testing.T) {
 				[]*FlagFilter{
 					{
 						AttributeName: "createdAt",
-						Operator:      lt,
+						Operator:      lte,
 						Value:         now,
 						FilterType:    filterTypeDate,
 					},
@@ -789,11 +1017,11 @@ func Test_matchByFilters(t *testing.T) {
 					"age":       20,
 					"createdAt": now.Add(-3 * time.Hour).Format(time.RFC3339),
 				}))
-			assert.False(t, matchByFilters(
+			assert.True(t, matchByFilters(
 				[]*FlagFilter{
 					{
 						AttributeName: "createdAt",
-						Operator:      lt,
+						Operator:      lte,
 						Value:         now,
 						FilterType:    filterTypeDate,
 					},
@@ -808,7 +1036,7 @@ func Test_matchByFilters(t *testing.T) {
 				[]*FlagFilter{
 					{
 						AttributeName: "createdAt",
-						Operator:      lt,
+						Operator:      lte,
 						Value:         now,
 						FilterType:    filterTypeNumber,
 					},
@@ -1043,6 +1271,51 @@ func Test_matchByFilters(t *testing.T) {
 					"country": "FR",
 					"age":     20,
 				}))
+
+			t.Run("wrong operator", func(t *testing.T) {
+				assert.False(t, matchByFilters(
+					[]*FlagFilter{
+						{
+							AttributeName: "country",
+							Operator:      is,
+							Value:         []string{"JP", "UA"},
+							FilterType:    filterTypeString,
+						},
+					},
+					Attributes{
+						"country": "JP",
+					}))
+			})
+		})
+
+		t.Run("bool", func(t *testing.T) {
+			assert.True(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "admin",
+						Operator:      in,
+						Value:         []bool{true},
+						FilterType:    filterTypeBool,
+					},
+				},
+				randAttributes(
+					add("admin", true),
+				)),
+			)
+
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "admin",
+						Operator:      in,
+						Value:         []bool{false},
+						FilterType:    filterTypeBool,
+					},
+				},
+				randAttributes(
+					add("admin", true),
+				)),
+			)
 		})
 
 		t.Run("float", func(t *testing.T) {
@@ -1080,25 +1353,44 @@ func Test_matchByFilters(t *testing.T) {
 		})
 
 		t.Run("date", func(t *testing.T) {
+			now := time.Now().Add(time.Duration(rand.Intn(1000)+1) * time.Second).Truncate(time.Second)
+			future := now.Add(time.Duration(rand.Intn(1000)+1) * time.Second).Truncate(time.Second)
 
 			t.Run("positive test", func(t *testing.T) {
-				createdAtArr := []string{"2016-03-16T05:44:23Z"}
-				assert.True(t, matchByFilters(
-					[]*FlagFilter{
-						{
-							AttributeName: "createdAt",
-							Operator:      in,
-							Value:         createdAtArr,
-							FilterType:    filterTypeDate,
+				t.Run("string type", func(t *testing.T) {
+					createdAtArr := []string{"2016-03-16T05:44:23Z"}
+					assert.True(t, matchByFilters(
+						[]*FlagFilter{
+							{
+								AttributeName: "createdAt",
+								Operator:      in,
+								Value:         createdAtArr,
+								FilterType:    filterTypeDate,
+							},
 						},
-					},
-					Attributes{
-						"createdAt": "2016-03-16T05:44:23Z",
-					}))
+						Attributes{
+							"createdAt": "2016-03-16T05:44:23Z",
+						}))
+				})
+				t.Run("Time type", func(t *testing.T) {
+					assert.True(t, matchByFilters(
+						[]*FlagFilter{
+							{
+								AttributeName: "createdAt",
+								Operator:      in,
+								Value:         []time.Time{now, future},
+								FilterType:    filterTypeDate,
+							},
+						},
+						Attributes{
+							"country":   "JP",
+							"createdAt": now.Format(time.RFC3339),
+						}))
+				})
 			})
 
 			t.Run("negative tests", func(t *testing.T) {
-				t.Run("client's value is an array", func(t *testing.T) {
+				t.Run("attribute type is invalid(array)", func(t *testing.T) {
 					createdAtArr := []string{"2016-03-16T05:44:23Z"}
 					assert.False(t, matchByFilters(
 						[]*FlagFilter{
@@ -1113,8 +1405,7 @@ func Test_matchByFilters(t *testing.T) {
 							"createdAt": []string{"2016-03-16T05:44:23Z"},
 						}))
 				})
-
-				t.Run("client's value is a bool type", func(t *testing.T) {
+				t.Run("attribute type is bool", func(t *testing.T) {
 					createdAtArr := []string{"2016-03-16T05:44:23Z"}
 					assert.False(t, matchByFilters(
 						[]*FlagFilter{
@@ -1129,7 +1420,8 @@ func Test_matchByFilters(t *testing.T) {
 							"createdAt": false,
 						}))
 				})
-				t.Run("client's value is a int type", func(t *testing.T) {
+
+				t.Run("attribute type is in wrong format", func(t *testing.T) {
 					createdAtArr := []string{"2016-03-16T05:44:23Z"}
 					assert.False(t, matchByFilters(
 						[]*FlagFilter{
@@ -1141,10 +1433,10 @@ func Test_matchByFilters(t *testing.T) {
 							},
 						},
 						Attributes{
-							"createdAt": 711185707000,
+							"createdAt": "16/03/2016, 07:44:23",
 						}))
 				})
-				t.Run("client's value is an empty string array", func(t *testing.T) {
+				t.Run("wrong date", func(t *testing.T) {
 					createdAtArr := []string{"2016-03-16T05:44:23Z"}
 					assert.False(t, matchByFilters(
 						[]*FlagFilter{
@@ -1156,44 +1448,12 @@ func Test_matchByFilters(t *testing.T) {
 							},
 						},
 						Attributes{
-							"createdAt": []string{},
+							"createdAt": "2017-07-21T06:32:21Z",
 						}))
 				})
 
 			})
 
-			now1 := time.Now().Add(time.Duration(rand.Intn(1000)+1) * time.Second).Truncate(time.Second)
-			now2 := now1.Add(time.Duration(rand.Intn(1000)+1) * time.Second).Truncate(time.Second)
-
-			// positive
-			assert.True(t, matchByFilters(
-				[]*FlagFilter{
-					{
-						AttributeName: "createdAt",
-						Operator:      in,
-						Value:         []time.Time{now1, now2},
-						FilterType:    filterTypeDate,
-					},
-				},
-				Attributes{
-					"country":   "JP",
-					"createdAt": now1.Format(time.RFC3339),
-				}))
-
-			// negative
-			assert.False(t, matchByFilters(
-				[]*FlagFilter{
-					{
-						AttributeName: "createdAt",
-						Operator:      in,
-						Value:         []time.Time{now1, now2},
-						FilterType:    filterTypeDate,
-					},
-				},
-				Attributes{
-					"country":   "FR",
-					"createdAt": now2.Add(time.Duration(rand.Intn(1000)+1) * time.Second),
-				}))
 		})
 	})
 
@@ -1291,6 +1551,22 @@ func Test_matchByFilters(t *testing.T) {
 					"age":         20,
 					"probability": 0.1,
 				}))
+
+			t.Run("wrong operator", func(t *testing.T) {
+				assert.False(t, matchByFilters(
+					[]*FlagFilter{
+						{
+							AttributeName: "probability",
+							Operator:      notIn,
+							Value:         0.5,
+							FilterType:    filterTypeNumber,
+						},
+					},
+					Attributes{
+						"age":         20,
+						"probability": 0.4,
+					}))
+			})
 		})
 
 		t.Run("bool", func(t *testing.T) {
@@ -1356,7 +1632,7 @@ func Test_matchByFilters(t *testing.T) {
 					{
 						AttributeName: "createdAt",
 						Operator:      notIn,
-						Value:         []string{now1.Format(time.RFC3339), now2.Format(time.RFC3339)},
+						Value:         []time.Time{now1, now2},
 						FilterType:    filterTypeNumber,
 					},
 				},
@@ -1392,6 +1668,21 @@ func Test_matchByFilters(t *testing.T) {
 				Attributes{
 					"country":   "FR",
 					"createdAt": now2.Format(time.RFC3339),
+				}))
+
+			// negative, date is in array
+			assert.False(t, matchByFilters(
+				[]*FlagFilter{
+					{
+						AttributeName: "createdAt",
+						Operator:      notIn,
+						Value:         []time.Time{now1, now2},
+						FilterType:    filterTypeNumber,
+					},
+				},
+				Attributes{
+					"country":   "JP",
+					"createdAt": now1.Format(time.RFC3339),
 				}))
 		})
 	})
@@ -1702,36 +1993,19 @@ func randCountryNEq(v string) string {
 	return v2
 }
 
-func Test_int_vs_int64(t *testing.T) {
-	buf := []byte(`{"a":22,"b":44444444444}`)
-	var mm map[string]interface{}
-	err := json.Unmarshal(buf, &mm)
+func TestJSONUnmarshalToFloat64(t *testing.T) {
+	buf := []byte(`{"a":22.4,"b":44444444444}`)
+	var attributes map[string]interface{}
+	err := json.Unmarshal(buf, &attributes)
 	require.NoError(t, err)
 
-	for k, v := range mm {
-		log.Printf("%s: %T %+v", k, v, v)
-
-		x1, ok := v.(int)
-		if ok {
-			mm[k] = x1
-			log.Printf("ok, int: %d", x1)
-			continue
-		}
-
-		x2, ok := v.(int64)
-		if ok {
-			mm[k] = x2
-			log.Printf("ok, int64: %d", x1)
-			continue
+	for _, v := range attributes {
+		switch unmarshalType := v.(type) {
+		case float64:
+			log.Printf("float64 value: %+v", v)
+		default:
+			assert.Fail(t, "must unmarshal to float64, but got", unmarshalType)
 		}
 	}
 
-	switch v := mm["a"]; v.(type) {
-	case int:
-		log.Printf("int:   %+v", v)
-	case int64:
-		log.Printf("int64: %+v", v)
-	default:
-		log.Printf("def:   %+v", v)
-	}
 }

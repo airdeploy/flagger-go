@@ -4,26 +4,34 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"github.com/airdeploy/flagger-go/v3/core"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/h2non/gock.v1"
 	"io"
 	"io/ioutil"
+	"log"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"sync"
 	"testing"
+	"time"
 )
 
 const (
-	serverUrl = "http://localhost:8000"
+	serverURL = "http://localhost:8000"
 	postPath  = "/v3/ingest/9f5859owpnhxszee"
-	url       = serverUrl + postPath
+	url       = serverURL + postPath
 )
 
 func TestHttpRequest(t *testing.T) {
 
 	t.Run("data is big enough, send gzip data", func(t *testing.T) {
-		data := "{\n    \"id\": \"59689e2f-9274-49e6-85fd-c6c6750c461a\",\n    \"entities\": [\n        {\n            \"id\": \"rptd6i\",\n            \"attributes\": {\n                \"id\": \"rptd6i\"\n            },\n            \"type\": \"User\"\n        },\n        {\n            \"id\": \"2mz3s\",\n            \"attributes\": {\n                \"id\": \"2mz3s\"\n            },\n            \"type\": \"User\"\n        },\n        {\n            \"id\": \"jz0r8s\",\n            \"attributes\": {\n                \"id\": \"jz0r8s\"\n            },\n            \"type\": \"User\"\n        }\n    ],\n    \"exposures\": [\n        {\n            \"hashkey\": \"1962742\",\n            \"codename\": \"example-flag\",\n            \"variation\": \"on\",\n            \"entity\": {\n                \"id\": \"rptd6i\",\n                \"attributes\": {\n                    \"id\": \"rptd6i\"\n                },\n                \"type\": \"User\"\n            },\n            \"methodCalled\": \"isEnabled\",\n            \"timestamp\": \"2020-07-16T18:38:56.639Z\"\n        },\n        {\n            \"hashkey\": \"1962742\",\n            \"codename\": \"example-flag\",\n            \"variation\": \"on\",\n            \"entity\": {\n                \"id\": \"2mz3s\",\n                \"attributes\": {\n                    \"id\": \"2mz3s\"\n                },\n                \"type\": \"User\"\n            },\n            \"methodCalled\": \"isSampled\",\n            \"timestamp\": \"2020-07-16T18:38:56.641Z\"\n        },\n        {\n            \"hashkey\": \"1962742\",\n            \"codename\": \"example-flag\",\n            \"variation\": \"on\",\n            \"entity\": {\n                \"id\": \"jz0r8s\",\n                \"attributes\": {\n                    \"id\": \"jz0r8s\"\n                },\n                \"type\": \"User\"\n            },\n            \"methodCalled\": \"getVariation\",\n            \"timestamp\": \"2020-07-16T18:38:56.642Z\"\n        }\n    ],\n    \"events\": [],\n    \"sdkInfo\": {\n        \"name\": \"nodejs\",\n        \"version\": \"3.0.0\"\n    },\n    \"detectedFlags\": []\n}"
-		assert.True(t, len(data) > 1024)
+		data := generateIngestionDataRequest(4, 3)
+		dataStr, err := json.Marshal(data)
+		assert.Nil(t, err)
+		assert.True(t, len(dataStr) > 1024)
 
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -49,7 +57,7 @@ func TestHttpRequest(t *testing.T) {
 				assert.Len(t, data.Entities, 3)
 				assert.Len(t, data.Events, 0)
 				assert.Len(t, data.DetectedFlags, 0)
-				assert.Len(t, data.Exposures, 3)
+				assert.Len(t, data.Exposures, 4)
 
 				gock.Observe(nil)
 
@@ -57,20 +65,20 @@ func TestHttpRequest(t *testing.T) {
 			}
 		})
 
-		gock.New(serverUrl).
+		gock.New(serverURL).
 			Post(postPath).
 			MatchType("json").
 			Compression("gzip").
 			Reply(200)
 
-		err := httpRequest([]byte(data), url)
+		err = httpRequest(dataStr, url)
 		assert.Nil(t, err)
 	})
 
 	t.Run("data is small, sent as is", func(t *testing.T) {
-		data := "{\n    \"id\": \"59689e2f-9274-49e6-85fd-c6c6750c461a\",\n    \"entities\": [\n        {\n            \"id\": \"jz0r8s\",\n            \"attributes\": {\n                \"id\": \"jz0r8s\"\n            },\n            \"type\": \"User\"\n        }\n    ],\n    \"exposures\": [\n        {\n            \"hashkey\": \"1962742\",\n            \"codename\": \"example-flag\",\n            \"variation\": \"on\",\n            \"entity\": {\n                \"id\": \"jz0r8s\",\n                \"attributes\": {\n                    \"id\": \"jz0r8s\"\n                },\n                \"type\": \"User\"\n            },\n            \"methodCalled\": \"getVariation\",\n            \"timestamp\": \"2020-07-16T18:38:56.642Z\"\n        }\n    ],\n    \"events\": [],\n    \"sdkInfo\": {\n        \"name\": \"nodejs\",\n        \"version\": \"3.0.0\"\n    },\n    \"detectedFlags\": []\n}"
-
-		assert.True(t, len(data) < 1024)
+		data := generateIngestionDataRequest(1, 1)
+		dataStr, err := json.Marshal(data)
+		assert.True(t, len(dataStr) < 1024)
 
 		var wg sync.WaitGroup
 		wg.Add(1)
@@ -101,15 +109,37 @@ func TestHttpRequest(t *testing.T) {
 			}
 		})
 
-		gock.New(serverUrl).
+		gock.New(serverURL).
 			Post(postPath).
 			MatchType("json").
 			Reply(200)
 
-		err := httpRequest([]byte(data), url)
+		err = httpRequest(dataStr, url)
 		assert.Nil(t, err)
 	})
 
+	t.Run("status code != 200", func(t *testing.T) {
+		data := generateIngestionDataRequest(3, 2)
+		dataStr, err := json.Marshal(data)
+		assert.Nil(t, err)
+		gock.New(serverURL).
+			Post(postPath).
+			MatchType("json").
+			Reply(500)
+
+		err = httpRequest(dataStr, url)
+		assert.NotNil(t, err)
+	})
+
+	t.Run("wrong URL", func(t *testing.T) {
+		data := generateIngestionDataRequest(1, 1)
+		dataStr, err := json.Marshal(data)
+		assert.Nil(t, err)
+
+		err = httpRequest(dataStr, "https://localhost:1234/dada/dasdsa/dasda")
+		log.Printf("%+v", err)
+		assert.NotNil(t, err)
+	})
 }
 
 func gUnzipData(data []byte) (resData []byte, err error) {
@@ -130,4 +160,36 @@ func gUnzipData(data []byte) (resData []byte, err error) {
 	resData = resB.Bytes()
 
 	return
+}
+
+func generateIngestionDataRequest(exposuresCount, entitiesCount int) IngestionDataRequest {
+	var entities []*core.Entity
+	for i := 0; i < entitiesCount; i++ {
+		entities = append(entities,
+			&core.Entity{ID: strconv.Itoa(i), Attributes: core.Attributes{"id": strconv.Itoa(i), "type": "User"}},
+		)
+	}
+	data := IngestionDataRequest{
+		ID:        uuid.New().String(),
+		Entities:  entities,
+		Exposures: []*core.Exposure{},
+		Events:    []*core.Event{},
+		SDKInfo: &core.SDKInfo{
+			Name:    "golang",
+			Version: "3.0.0",
+		},
+		DetectedFlags: []string{},
+	}
+	for i := 0; i < exposuresCount; i++ {
+		data.Exposures = append(data.Exposures, &core.Exposure{
+			Codename:     "example-flag",
+			HashKey:      "123",
+			Variation:    "on",
+			Entity:       entities[rand.Intn(len(entities))],
+			MethodCalled: "getVariation",
+			Timestamp:    time.Now(),
+		})
+	}
+
+	return data
 }

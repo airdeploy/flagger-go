@@ -17,26 +17,27 @@ var _ interface {
 	Activate()
 } = new(Ingester)
 
-// NewIngester
+// NewIngester creates new instance of ingester
 func NewIngester(sdkInfo *core.SDKInfo, firstExposuresIngestThreshold int) *Ingester {
 	return &Ingester{
-		strategy: NewGroupStrategy(sdkInfo, httpRequest, firstExposuresIngestThreshold),
+		strategy: newGroupStrategy(sdkInfo, httpRequest, firstExposuresIngestThreshold),
 	}
 }
 
-// Shutdown
+// Shutdown shutdowns the ingester
+// return true if existed because of timeout
 func (i *Ingester) Shutdown(timeout time.Duration) bool {
 	return i.strategy.ShutdownWithTimeout(timeout)
 }
 
-// Publish
+// Publish publishes new entity
 func (i *Ingester) Publish(entity *core.Entity) {
 	i.publish(&IngestionDataRequest{
 		Entities: []*core.Entity{entity},
 	})
 }
 
-// Track
+// Track adds new event to the ingester
 func (i *Ingester) Track(event *core.Event) {
 	i.mux.Lock()
 	defer i.mux.Unlock()
@@ -53,8 +54,6 @@ func (i *Ingester) Track(event *core.Event) {
 		entities = append(entities, event.Entity)
 	} else if i.entity != nil {
 		entities = append(entities, i.entity)
-	} else {
-		entities = []*core.Entity{}
 	}
 
 	i.publish(&IngestionDataRequest{
@@ -63,7 +62,7 @@ func (i *Ingester) Track(event *core.Event) {
 	})
 }
 
-// PublishExposure
+// PublishExposure adds new exposure to the ingester
 func (i *Ingester) PublishExposure(exposure *core.Exposure, isNewFlag bool) {
 	i.mux.Lock()
 	defer i.mux.Unlock()
@@ -91,24 +90,24 @@ func (i *Ingester) publish(data *IngestionDataRequest) {
 	i.strategy.Publish(data)
 }
 
-// SetEntity
+// SetEntity sets the default entity to the ingester
 func (i *Ingester) SetEntity(entity *core.Entity) {
 	i.mux.Lock()
 	i.entity = entity
 	i.mux.Unlock()
 }
 
-// SetConfig
+// SetConfig sets new config
 func (i *Ingester) SetConfig(v *core.SDKConfig) {
 	i.strategy.SetConfig(v.Copy())
 }
 
-// SetURL
+// SetURL sets url
 func (i *Ingester) SetURL(ingestionURL string) {
 	i.strategy.SetURL(ingestionURL)
 }
 
-// Activate
+// Activate activates ingester strategy. Must be the first method called after NewIngester
 func (i *Ingester) Activate() {
 	i.strategy.Activate()
 }

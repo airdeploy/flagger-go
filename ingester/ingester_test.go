@@ -1,9 +1,7 @@
 package ingester
 
 import (
-	"github.com/sirupsen/logrus"
 	"io/ioutil"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"sync"
@@ -15,6 +13,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/h2non/gock.v1"
 )
+
+const apiKey = "testApiKey"
 
 func TestNoEntityProvided(t *testing.T) {
 	ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 0)
@@ -42,7 +42,6 @@ func TestNoEntityProvided(t *testing.T) {
 }
 
 func TestIngestionSendAfter500Calls(t *testing.T) {
-	apiKey := randomString(8)
 	gock.New("https://ingestion.airdeploy.io").
 		Post("/collector").
 		MatchParam("envKey", apiKey).
@@ -107,7 +106,6 @@ func TestIngestionSendAfter500Calls(t *testing.T) {
 }
 
 func TestIngestionDeduped25Entities(t *testing.T) {
-	apiKey := randomString(8)
 	gock.New("https://ingestion.airdeploy.io").
 		Post("/collector").
 		MatchParam("envKey", apiKey).
@@ -218,7 +216,6 @@ func TestDetectedFlagShouldImmediatelyIngest(t *testing.T) {
 
 func TestFirst10ExposureIngest(t *testing.T) {
 
-	logrus.SetLevel(logrus.DebugLevel)
 	gock.New("https://ingestion.com").
 		Post("/v3/ingest/12345678").
 		Times(11).
@@ -263,12 +260,53 @@ func TestFirst10ExposureIngest(t *testing.T) {
 	assert.Equal(t, 11, callCounter)
 }
 
-func randomString(n int) string {
-	var letter = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
+func TestIngester_PublishExposure(t *testing.T) {
+	t.Run("exposure has no entity, ingester's entity is used", func(t *testing.T) {
+		ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 10)
+		ingester.Activate()
+		ingester.SetConfig(&core.SDKConfig{
+			SDKIngestionInterval: 60,
+			SDKIngestionMaxItems: 500,
+		})
 
-	b := make([]rune, n)
-	for i := range b {
-		b[i] = letter[rand.Intn(len(letter))]
-	}
-	return string(b)
+		ingester.SetURL("https://ingestion.com/v3/ingest/12345678")
+
+		entity := &core.Entity{
+			ID:         "1",
+			Type:       "User",
+			Attributes: core.Attributes{"id": "1"},
+		}
+		ingester.SetEntity(entity)
+
+		gock.New("https://ingestion.com").
+			Post("/v3/ingest/12345678").
+			Times(1).
+			Reply(200)
+
+		gock.Observe(func(request *http.Request, mock gock.Mock) {
+			buf, err := ioutil.ReadAll(request.Body)
+			assert.NoError(t, err)
+
+			var data *IngestionDataRequest
+			err = json.Unmarshal(buf, &data)
+			assert.NoError(t, err)
+
+			assert.Zero(t, len(data.DetectedFlags))
+			assert.Equal(t, 1, len(data.Entities))
+			assert.Equal(t, 1, len(data.Exposures))
+
+			gock.Observe(nil)
+		})
+		ingester.PublishExposure(&core.Exposure{
+			Codename:     "example-flag",
+			HashKey:      "12345",
+			Variation:    "on",
+			Entity:       nil,
+			MethodCalled: "getVariation",
+			Timestamp:    time.Now(),
+		}, false)
+
+		timeout := ingester.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
+	})
 }

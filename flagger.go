@@ -1,7 +1,7 @@
 package flagger
 
 import (
-	"context"
+	"github.com/airdeploy/flagger-go/v3/internal/httputils"
 	"net/http"
 	"sync"
 	"time"
@@ -17,9 +17,9 @@ const firstExposuresIngestThreshold = 10
 
 // check implementation public interface on compile time
 var _ interface {
-	Init(ctx context.Context, args *InitArgs) error
-	Publish(ctx context.Context, entity *core.Entity)
-	Track(ctx context.Context, event *core.Event)
+	Init(args *InitArgs) error
+	Publish(entity *core.Entity)
+	Track(event *core.Event)
 	SetEntity(entity *core.Entity)
 	IsEnabled(codename string, entity *core.Entity) bool
 	IsSampled(codename string, entity *core.Entity) bool
@@ -54,7 +54,7 @@ type InitArgs struct {
 }
 
 // Init gets FlaggerConfiguration, establishes and maintains SSE connections and initialize Ingester
-func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
+func (flagger *Flagger) Init(args *InitArgs) error {
 	args, sdkInfo, err := prepareInitArgs(args, SDKInfo) // this method return copy of *InitArgs and *core.SDKInfo
 	if err != nil {
 		return err
@@ -73,32 +73,26 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 
 	// get configuration from SourceURL/BackupSourceURL
 	var configuration *core.Configuration
-	err = getConfiguration(ctx, flagger.rt, args.SourceURL, defaultAttemptsConnection, &configuration)
+	err = httputils.GetConfiguration(flagger.rt, args.SourceURL, defaultAttemptsConnection, &configuration)
 	if err != nil {
 		log.Warnf("Unable to fetch FlaggerConfiguration from SourceURL")
-		err := getConfiguration(ctx, flagger.rt, args.BackupSourceURL, defaultAttemptsConnection, &configuration)
+		err := httputils.GetConfiguration(flagger.rt, args.BackupSourceURL, defaultAttemptsConnection, &configuration)
 		if err != nil {
 			log.Warnf("Unable to fetch FlaggerConfiguration from BackupSourceURL")
 			return err
-		} else {
-			bytes, _ := json.Marshal(configuration)
-			log.Debugf("init flagger from BackupSourceURL was success: %+v", string(bytes))
 		}
+		bytes, _ := json.Marshal(configuration)
+		log.Debugf("init flagger from BackupSourceURL was success: %+v", string(bytes))
 	} else {
 		bytes, _ := json.Marshal(configuration)
 		log.Debugf("init flagger from SourceURL was success: %+v", string(bytes))
 	}
 
-	if configuration != nil {
-		flagger.core.SetConfig(configuration)
-		flagger.ingester.Activate()
-		flagger.ingester.SetURL(args.IngestionURL)
-		flagger.ingester.SetConfig(&configuration.SdkConfig)
-	} else {
-		// have no configuration
-		flagger.core.SetConfig(nil)
-		flagger.ingester.SetConfig(defaultSDKConfig)
-	}
+	// init returns err if flagger fails to get the configuration
+	flagger.core.SetConfig(configuration)
+	flagger.ingester.Activate()
+	flagger.ingester.SetURL(args.IngestionURL)
+	flagger.ingester.SetConfig(&configuration.SdkConfig)
 
 	// SSE
 	if flagger.sse != nil {
@@ -112,7 +106,7 @@ func (flagger *Flagger) Init(ctx context.Context, args *InitArgs) error {
 	return nil
 }
 
-// Shutdown ingests data(if any), stop ingester and closes SSE connection.
+// Shutdown ingests data(if any), stops ingester and closes SSE connection.
 // Shutdown waits to finish current ingestion request, but no longer than a timeout.
 //
 // returns true if closed by timeout
@@ -130,8 +124,8 @@ func (flagger *Flagger) Shutdown(timeout time.Duration) bool {
 	return false
 }
 
-// Explicitly notify Airship about an Entity
-func (flagger *Flagger) Publish(ctx context.Context, entity *core.Entity) {
+// Publish explicitly notifies Airship about an Entity
+func (flagger *Flagger) Publish(entity *core.Entity) {
 	if entity == nil {
 		log.Warnf("Could not publish because entity is empty")
 		return
@@ -142,16 +136,16 @@ func (flagger *Flagger) Publish(ctx context.Context, entity *core.Entity) {
 		return
 	}
 
-	entity = core.EscapeEntity(entity)
+	escapedEntity := core.EscapeEntity(entity)
 
 	flagger.mux.RLock()
-	flagger.ingester.Publish(entity)
+	flagger.ingester.Publish(escapedEntity)
 	flagger.mux.RUnlock()
 }
 
-// Simple event tracking API.
+// Track is simple event tracking API.
 // Entity is an optional parameter if it was set before.
-func (flagger *Flagger) Track(ctx context.Context, event *core.Event) {
+func (flagger *Flagger) Track(event *core.Event) {
 	if event == nil {
 		log.Warnf("Could not track because event is empty")
 		return
@@ -167,10 +161,10 @@ func (flagger *Flagger) Track(ctx context.Context, event *core.Event) {
 		return
 	}
 
-	event = core.EscapeEvent(event)
+	escapedEvent := core.EscapeEvent(event)
 
 	flagger.mux.RLock()
-	flagger.ingester.Track(event)
+	flagger.ingester.Track(escapedEvent)
 	flagger.mux.RUnlock()
 }
 
@@ -188,24 +182,24 @@ func (flagger *Flagger) SetEntity(entity *core.Entity) {
 		log.Warnf("Could not setEntity because id is empty, entity: %+v", string(bytes))
 		return
 	}
-
+	escapedEntity := core.EscapeEntity(entity)
 	flagger.mux.RLock()
-	flagger.core.SetEntity(core.EscapeEntity(entity))
+	flagger.core.SetEntity(escapedEntity)
 	if flagger.ingester != nil {
-		flagger.ingester.SetEntity(entity)
+		flagger.ingester.SetEntity(escapedEntity)
 	}
-
-	bytes, _ := json.Marshal(entity)
-	log.Debugf("New entity is set to Flagger, entity: %+v", string(bytes))
 	flagger.mux.RUnlock()
+
+	bytes, _ := json.Marshal(escapedEntity)
+	log.Debugf("New entity is set to Flagger, entity: %+v", string(bytes))
 }
 
-// Determines if flag is enabled for entity.
+// IsEnabled checks whether a flag is enabled for an entity
 func (flagger *Flagger) IsEnabled(codename string, entity *core.Entity) bool {
-	entity = core.EscapeEntity(entity)
+	escapedEntity := core.EscapeEntity(entity)
 
 	flagger.mux.RLock()
-	flagResult := flagger.core.EvaluateFlag(codename, entity)
+	flagResult := flagger.core.EvaluateFlag(codename, escapedEntity)
 	flagger.ingestExposure("isEnabled", codename, flagResult)
 	flagger.mux.RUnlock()
 
@@ -214,12 +208,14 @@ func (flagger *Flagger) IsEnabled(codename string, entity *core.Entity) bool {
 	return flagResult.Enabled
 }
 
-// Determines if entity is within the targeted subpopulations
+// IsSampled returns whether or not an entity is within one of the targeted populations.
+// However, the entity may or may not be "sampled".
+// A sampled entity may someday receive this feature, but this function only determines whether entity is sampled.
 func (flagger *Flagger) IsSampled(codename string, entity *core.Entity) bool {
-	core.EscapeEntity(entity)
+	escapedEntity := core.EscapeEntity(entity)
 
 	flagger.mux.RLock()
-	flagResult := flagger.core.EvaluateFlag(codename, entity)
+	flagResult := flagger.core.EvaluateFlag(codename, escapedEntity)
 	flagger.ingestExposure("isSampled", codename, flagResult)
 	flagger.mux.RUnlock()
 
@@ -228,12 +224,13 @@ func (flagger *Flagger) IsSampled(codename string, entity *core.Entity) bool {
 	return flagResult.Sampled
 }
 
-// Returns the variation assigned to the entity in a multivariate flag
+// GetVariation returns the variation that the entity will receive (after resolving all Flagging Rules).
+// This is a more general flag function that is useful for multivariate flags.
 func (flagger *Flagger) GetVariation(codename string, entity *core.Entity) string {
-	core.EscapeEntity(entity)
+	escapedEntity := core.EscapeEntity(entity)
 
 	flagger.mux.RLock()
-	flagResult := flagger.core.EvaluateFlag(codename, entity)
+	flagResult := flagger.core.EvaluateFlag(codename, escapedEntity)
 	flagger.ingestExposure("getVariation", codename, flagResult)
 	flagger.mux.RUnlock()
 
@@ -242,12 +239,12 @@ func (flagger *Flagger) GetVariation(codename string, entity *core.Entity) strin
 	return flagResult.Variation.Codename
 }
 
-// Returns the payload associated with the treatment assigned to the entity
+// GetPayload returns the payload associated with the treatment assigned to the entity
 func (flagger *Flagger) GetPayload(codename string, entity *core.Entity) core.Payload {
-	core.EscapeEntity(entity)
+	escapedEntity := core.EscapeEntity(entity)
 
 	flagger.mux.RLock()
-	flagResult := flagger.core.EvaluateFlag(codename, entity)
+	flagResult := flagger.core.EvaluateFlag(codename, escapedEntity)
 	flagger.ingestExposure("getPayload", codename, flagResult)
 	flagger.mux.RUnlock()
 
@@ -262,7 +259,7 @@ func (flagger *Flagger) ingestExposure(methodName, codename string, result *core
 		result.Reason != core.CodenameIsEmpty &&
 		result.Reason != core.NoEntityProvided &&
 		result.Reason != core.FlaggerIsNotInitialized &&
-		result.Reason != core.IdIsEmpty {
+		result.Reason != core.IDIsEmpty {
 		exposure := &core.Exposure{
 			Codename:     codename,
 			HashKey:      result.Hashkey,

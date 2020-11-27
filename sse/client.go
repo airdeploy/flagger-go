@@ -49,6 +49,12 @@ func NewClient(cb CallBack) *Client {
 	}
 }
 
+func newClientWithRT(cb CallBack, rt http.RoundTripper) *Client {
+	client := NewClient(cb)
+	client.rt = rt
+	return client
+}
+
 // Client represent SSE client
 type Client struct {
 	changeURL chan string
@@ -71,6 +77,14 @@ func (c *Client) SetURL(URL string) {
 // Shutdown - closes sse connection to free up the resources
 func (c *Client) Shutdown() {
 	c.cancel()
+}
+
+func (c *Client) setReconnectInterval(interval time.Duration) {
+	c.reconnectInterval = interval
+}
+
+func (c *Client) setKeepaliveTimeout(keepaliveTimeout time.Duration) {
+	c.keepaliveTimeout = keepaliveTimeout
 }
 
 // foundation of sse client:
@@ -104,40 +118,40 @@ func (c *Client) infiniteLoop() {
 
 			dataChannel := make(chan [][]byte, 32)
 
-			// this goroutine just produce messages from connection into given channel
-			// goroutine can be returned by two ways: close response body or interrupt connection by server
+			// this goroutine sends messages from http connection to channel
+			// goroutine can be aborted by closing the response body or interrupting the http connection
 			go func() {
 				defer close(dataChannel)
 				messagesReader(r, dataChannel) // (1) producer
 			}()
 
 			// event loop, handle:
-			//  - receive next message from connection
+			//  - receives next message from connection
 			//  - keep alive timeout
-			//  - change server URL
+			//  - changes server URL
 			keepAliveTimer := time.NewTimer(c.keepaliveTimeout)
 			defer keepAliveTimer.Stop()
 			for {
 				select {
 				case message, ok := <-dataChannel: // (1) consumer
 					if !ok {
-						log.Debugf("SSE connection is closed")
+						log.Debugf("SSE: connection is closed")
 						return // messagesReader goroutine was returned
 					}
 
 					keepAliveTimer.Reset(c.keepaliveTimeout)
 
-					log.Debugf("SSE: receive message: %s", message)
+					log.Debugf("SSE: has received the message: %s", message)
 					processMessage(message, c.cb)
 
 				case <-keepAliveTimer.C:
-					log.Debugf("SSE: connection was expired, keep-alive timeout: %s", c.keepaliveTimeout)
+					log.Debugf("SSE: keepAlive timeout has expired, timeout: %s", c.keepaliveTimeout)
 					return
 
 				case u := <-c.changeURL:
 					URL = u
 					isURLHasChanged = true
-					log.Debugf("SSE: changing URL: %s", URL)
+					log.Debugf("SSE: URL has changed to %s", URL)
 					return
 				case <-c.ctx.Done():
 					return
@@ -145,21 +159,27 @@ func (c *Client) infiniteLoop() {
 			}
 		})
 
+		log.Debugf("SSE: not accepting new messages")
+
 		if /* NOT */ !isURLHasChanged {
 			// reconnect interval: [reconnectInterval, 2*reconnectInterval]
 			interval := c.reconnectInterval + time.Duration(rand.Int63n(int64(c.reconnectInterval)))
 
+			log.Debugf("SSE: Waiting %s to reconnect", time.Duration.Round(interval, time.Second))
 			// server URL can be changed during reconnection timeout, so:
 			timer := time.NewTimer(interval)
 			select {
 			case u := <-c.changeURL:
 				timer.Stop()
 				URL = u
-				log.Debugf("SSE url has change to %s", URL)
+				log.Debugf("SSE: during reconnection interval URL has changed to %s", URL)
 
 			case <-timer.C:
 				timer.Stop()
+				log.Debugf("SSE: reconnect interval has passed, reconnecting to %+v", URL)
+
 			case <-c.ctx.Done():
+				log.Debugf("SSE: shut down")
 				return
 			}
 		}
@@ -177,13 +197,13 @@ func (c *Client) reconnect(URL string, onConnected func(r io.Reader)) {
 	req.Header.Set("accept-encoding", "gzip")
 	resp, err := c.rt.RoundTrip(req)
 	if err != nil {
-		log.Debugf("SSE: error when connecting to URL: %+v", URL)
+		log.Debugf("SSE: error %+v when connecting to URL: %+v", err.Error(), URL)
 		return
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Debugf("SSE connection failed, status: \"%s\", code: \"%d\"", resp.Status, resp.StatusCode)
+		log.Debugf("SSE: connection failed, status: \"%s\", code: \"%d\"", resp.Status, resp.StatusCode)
 		return
 	}
 
@@ -192,7 +212,7 @@ func (c *Client) reconnect(URL string, onConnected func(r io.Reader)) {
 	case "gzip":
 		r, err := gzip.NewReader(resp.Body)
 		if err != nil {
-			log.Debugf("SSE: reconnect: %+v", errors.Wrap(err, "gzip.NewReader"))
+			log.Debugf("SSE: failed to read gzipped data, url: %+v", URL)
 			return
 		}
 		onConnected(r)
@@ -220,7 +240,7 @@ func messagesReader(r io.Reader, dataChannel chan<- [][]byte) {
 func processMessage(message [][]byte, cb CallBack) {
 	_, kind, data, err := parseMessage(message)
 	if err != nil {
-		log.Warnf("SSE: parseMessage: %+v", errors.WithStack(err))
+		log.Warnf("SSE: parse message error: %+v", err)
 		return
 	}
 
@@ -228,7 +248,7 @@ func processMessage(message [][]byte, cb CallBack) {
 		var v *core.Configuration
 		err := json.Unmarshal(data, &v)
 		if err != nil {
-			log.Warnf("SSE: parse json: %+v", errors.WithStack(err))
+			log.Warnf("SSE: json parse error: %+v, data: %+v", err, string(data))
 			return
 		}
 
@@ -249,7 +269,7 @@ func parseMessage(message [][]byte) (id, kind string, data []byte, _ error) {
 		return "", "", nil, errors.Errorf("expect event:...")
 	}
 
-	if len(message[1]) < 5 {
+	if len(message[2]) < 5 {
 		return "", "", nil, errors.Errorf("expect data:...")
 	}
 

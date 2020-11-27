@@ -123,7 +123,7 @@ func (core *Core) EvaluateFlag(codename string, entity *Entity) *FlagResult {
 			Variation: newEmptyVariation(),
 			Payload:   newEmptyPayload(),
 			IsNew:     false,
-			Reason:    IdIsEmpty,
+			Reason:    IDIsEmpty,
 		}
 	}
 

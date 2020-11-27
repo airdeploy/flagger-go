@@ -3,7 +3,7 @@
     "SDK_INGESTION_INTERVAL": 60,
     "SDK_INGESTION_MAX_CALLS": 500
   },
-  "hashKey": "2779",
+  "hashKey": "5678",
   "flags": [
     {
       "hashkey": "dfsdf42",
@@ -13,7 +13,6 @@
           "codename": "enabled",
           "probability": 1,
           "payload": {
-
           }
         }
       ],

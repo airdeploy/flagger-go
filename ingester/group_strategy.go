@@ -10,9 +10,9 @@ import (
 	"time"
 )
 
-func NewGroupStrategy(sdkInfo *core.SDKInfo, httpRequest HttpRequest, firstExposuresIngestThreshold int) *GroupStrategy {
+func newGroupStrategy(sdkInfo *core.SDKInfo, httpRequest httpRequestType, firstExposuresIngestThreshold int) *groupStrategy {
 	ctx, cancel := context.WithCancel(context.Background())
-	gs := &GroupStrategy{
+	gs := &groupStrategy{
 		wg:            sync.WaitGroup{},
 		ingestionWg:   sync.WaitGroup{},
 		retryPolicyWg: sync.WaitGroup{},
@@ -24,7 +24,7 @@ func NewGroupStrategy(sdkInfo *core.SDKInfo, httpRequest HttpRequest, firstExpos
 
 		httpRequest: httpRequest,
 		sdkInfo:     sdkInfo,
-		retryPolicy: NewRetryPolicy(),
+		retryPolicy: newRetryPolicy(),
 
 		// 16 is a magic number. 2 should work just fine, but 16>2, so 16
 		updateSDKConfigChannel: make(chan *core.SDKConfig, 16),
@@ -33,7 +33,7 @@ func NewGroupStrategy(sdkInfo *core.SDKInfo, httpRequest HttpRequest, firstExpos
 		// size must be really big to prevent synchronization
 		ingestionDataChannel: make(chan *IngestionDataRequest, 4000),
 		// to prevent stutter of the Publish function
-		retryPolicyChannel: make(chan *RetryPolicyRequest, 1000),
+		retryPolicyChannel: make(chan *retryPolicyRequest, 1000),
 
 		callCount:                     0,
 		firstExposuresIngestThreshold: firstExposuresIngestThreshold,
@@ -44,13 +44,13 @@ func NewGroupStrategy(sdkInfo *core.SDKInfo, httpRequest HttpRequest, firstExpos
 	return gs
 }
 
-func (gs *GroupStrategy) shouldSendIngestionData(ingestionMaxCalls int, data *IngestionDataRequest) bool {
+func (gs *groupStrategy) shouldSendIngestionData(ingestionMaxCalls int, data *IngestionDataRequest) bool {
 	return (gs.callCount >= ingestionMaxCalls) ||
 		(len(data.DetectedFlags) > 0) ||
 		(len(data.Exposures) > 0 && gs.exposuresCount <= gs.firstExposuresIngestThreshold)
 }
 
-func (gs *GroupStrategy) startWorker() {
+func (gs *groupStrategy) startWorker() {
 	requestPolicyCtx, cancelRequestPolicy := context.WithCancel(context.Background())
 
 	go func() {
@@ -136,10 +136,10 @@ func (gs *GroupStrategy) startWorker() {
 }
 
 // side effects notice: it clears callCount and accumulator
-func (gs *GroupStrategy) ingest(ingestionURL string, callback RetryPolicyCallback) {
+func (gs *groupStrategy) ingest(ingestionURL string, callback RetryPolicyCallback) {
 	bytes, err := transformToBytes(gs.accumulator, gs.sdkInfo)
 	if err == nil {
-		rpr := &RetryPolicyRequest{
+		rpr := &retryPolicyRequest{
 			data:         bytes,
 			ingestionURL: ingestionURL,
 			httpRequest:  gs.httpRequest,
@@ -152,7 +152,7 @@ func (gs *GroupStrategy) ingest(ingestionURL string, callback RetryPolicyCallbac
 	gs.accumulator = []*IngestionDataRequest{}
 }
 
-func (gs *GroupStrategy) Publish(data *IngestionDataRequest) {
+func (gs *groupStrategy) Publish(data *IngestionDataRequest) {
 	gs.lock.RLock()
 	defer gs.lock.RUnlock()
 	if gs.isActive {
@@ -161,7 +161,7 @@ func (gs *GroupStrategy) Publish(data *IngestionDataRequest) {
 	}
 }
 
-func (gs *GroupStrategy) SetConfig(sdkConfig *core.SDKConfig) {
+func (gs *groupStrategy) SetConfig(sdkConfig *core.SDKConfig) {
 	gs.lock.RLock()
 	defer gs.lock.RUnlock()
 	if gs.isActive {
@@ -169,7 +169,7 @@ func (gs *GroupStrategy) SetConfig(sdkConfig *core.SDKConfig) {
 	}
 }
 
-func (gs *GroupStrategy) SetURL(ingestionURL string) {
+func (gs *groupStrategy) SetURL(ingestionURL string) {
 	gs.lock.RLock()
 	defer gs.lock.RUnlock()
 	if gs.isActive {
@@ -177,19 +177,19 @@ func (gs *GroupStrategy) SetURL(ingestionURL string) {
 	}
 }
 
-func (gs *GroupStrategy) Activate() {
+func (gs *groupStrategy) Activate() {
 	gs.lock.Lock()
 	defer gs.lock.Unlock()
 	gs.isActive = true
 }
 
-// Important notes, this function
+// ShutdownWithTimeout features:
 // - waits for group strategy to be initialized(URL and sdkConfig are set)
 // - waits for current ingestion to finish
 // - waits for the ingestionDataChannel to read all the data
 // - adds all the data in the accumulator, ingest it and waits for the httpRequest to finish
 // returns false if shutdown terminates before the timeout
-func (gs *GroupStrategy) ShutdownWithTimeout(timeout time.Duration) bool {
+func (gs *groupStrategy) ShutdownWithTimeout(timeout time.Duration) bool {
 	gs.lock.Lock()
 	if !gs.isActive {
 		defer gs.lock.Unlock()
@@ -257,7 +257,7 @@ func transformToBytes(acc []*IngestionDataRequest, sdkInfo *core.SDKInfo) ([]byt
 	}
 
 	return json.Marshal(&IngestionDataRequest{
-		Id:            id.String(),
+		ID:            id.String(),
 		Entities:      entityMapToSlice(entitiesMap),
 		Exposures:     exposures,
 		Events:        events,

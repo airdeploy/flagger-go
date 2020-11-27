@@ -26,25 +26,26 @@ func httpRequest(data []byte, URL string) error {
 		if err := w.Close(); err != nil {
 			return err
 		}
-		if r, err := http.NewRequest("POST", URL, &compressed); err != nil {
+
+		r, err := http.NewRequest(http.MethodPost, URL, &compressed)
+		if err != nil {
 			return err
-		} else {
-			req = r
-			req.Header.Set("Content-Encoding", "gzip")
 		}
+		req = r
+		req.Header.Set("Content-Encoding", "gzip")
 	} else {
-		if r, err := http.NewRequest("POST", URL, bytes.NewBuffer(data)); err != nil {
+		r, err := http.NewRequest(http.MethodPost, URL, bytes.NewBuffer(data))
+		if err != nil {
 			return err
-		} else {
-			req = r
 		}
+		req = r
 	}
 
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return errors.Wrap(err, "RoundTrip")
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 

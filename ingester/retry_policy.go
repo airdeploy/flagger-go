@@ -7,18 +7,18 @@ import (
 
 const defaultMaxMemorySize = 2e8 // 100 MB
 
-func NewRetryPolicy() *RetryPolicy {
-	return &RetryPolicy{
+func newRetryPolicy() *retryPolicy {
+	return &retryPolicy{
 		maxMemorySizeInBytes: defaultMaxMemorySize,
 	}
 }
 
 // this method will trigger ingest with data and ingestionURL
-// if it fails to do so, RetryPolicy remembers the data(if there is enough space)
+// if it fails to do so, retryPolicy remembers the data(if there is enough space)
 // and will try again at the next ingest call.
-// If the next call of ingest doesn't return error then RetryPolicy tries to send remembered data
+// If the next call of ingest doesn't return error then retryPolicy tries to send remembered data
 // in the queue order
-func (rt *RetryPolicy) ingest(request *RetryPolicyRequest) {
+func (rt *retryPolicy) ingest(request *retryPolicyRequest) {
 	//add one httpRequest to the wait group
 	err := request.httpRequest(request.data, request.ingestionURL)
 	if err != nil {
@@ -30,7 +30,7 @@ func (rt *RetryPolicy) ingest(request *RetryPolicyRequest) {
 	}
 }
 
-func (rt *RetryPolicy) putToQueue(data []byte, callback RetryPolicyCallback) {
+func (rt *retryPolicy) putToQueue(data []byte, callback RetryPolicyCallback) {
 	if rt.currentMemorySize+size(data) < rt.maxMemorySizeInBytes {
 		rt.addToQueue(data, callback)
 	} else {
@@ -54,15 +54,15 @@ func (rt *RetryPolicy) putToQueue(data []byte, callback RetryPolicyCallback) {
 
 // removes first element from queue
 // Caution: must be called when queue.length > 0
-func (rt *RetryPolicy) shift() *QueueElement {
+func (rt *retryPolicy) shift() *queueElement {
 	first := rt.queue[0]
 	rt.queue = rt.queue[1:]
 	rt.currentMemorySize -= size(first.data)
 	return first
 }
 
-func (rt *RetryPolicy) addToQueue(data []byte, callback RetryPolicyCallback) {
-	rt.queue = append(rt.queue, &QueueElement{
+func (rt *retryPolicy) addToQueue(data []byte, callback RetryPolicyCallback) {
+	rt.queue = append(rt.queue, &queueElement{
 		data:     data,
 		callback: callback,
 	})
@@ -73,7 +73,7 @@ func size(data []byte) int64 {
 	return int64(24 + len(data))
 }
 
-func (rt *RetryPolicy) releaseWait(ingestionURL string, callback HttpRequest) {
+func (rt *retryPolicy) releaseWait(ingestionURL string, callback httpRequestType) {
 	for {
 		// quit if queue is empty
 		if len(rt.queue) == 0 {
@@ -86,16 +86,16 @@ func (rt *RetryPolicy) releaseWait(ingestionURL string, callback HttpRequest) {
 		if err != nil {
 			// can't release anything
 			return
-		} else {
-			// success. Removes first element
-			first := rt.shift()
-			// notify about success
-			first.callback(nil)
 		}
+		// success. Removes fist element
+		first = rt.shift()
+		// notify about success
+		first.callback(nil)
 	}
 }
 
+// SetMaxSize set maximum seize for the buffer
 // not thread safe
-func (rt *RetryPolicy) SetMaxSize(maxMemorySizeInBytes int64) {
+func (rt *retryPolicy) SetMaxSize(maxMemorySizeInBytes int64) {
 	rt.maxMemorySizeInBytes = maxMemorySizeInBytes
 }

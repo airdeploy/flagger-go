@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/airdeploy/flagger-go/v3/log"
-	"github.com/pkg/errors"
 )
 
 // Configuration represent flagger configuration
@@ -28,18 +27,13 @@ type SDKConfig struct {
 	SDKIngestionMaxItems int `json:"SDK_INGESTION_MAX_CALLS,omitempty"`
 }
 
+// IngestionIntervalDuration converts seconds to time.Duration. Prevents interval less than 1
 func (s *SDKConfig) IngestionIntervalDuration() time.Duration {
 	// to prevent timer go crazy
 	if s.SDKIngestionInterval < 1 {
 		s.SDKIngestionInterval = 1
 	}
 	return time.Duration(s.SDKIngestionInterval) * time.Second
-}
-
-// EqualExceptLogLevel method for compare SDKConfig
-func (s *SDKConfig) Equal(v2 *SDKConfig) bool {
-	return s.SDKIngestionMaxItems == v2.SDKIngestionMaxItems &&
-		s.SDKIngestionInterval == v2.SDKIngestionInterval
 }
 
 // Copy return copy instance SDKConfig
@@ -56,7 +50,7 @@ type SDKInfo struct {
 	Version string `json:"version"`
 }
 
-// Copy
+// Copy creates a copy of SDKInfo
 func (s *SDKInfo) Copy() *SDKInfo {
 	return &SDKInfo{
 		Name:    s.Name,
@@ -91,18 +85,28 @@ type Entity struct {
 	Attributes Attributes `json:"attributes,omitempty"`
 }
 
-// EscapeEntity represent method for escaping Entity
+// EscapeEntity creates a new entity with all fields escaped
 func EscapeEntity(e *Entity) *Entity {
 	if e == nil {
 		return nil
 	}
-	var res = e
+	res := Entity{
+		ID:         e.ID,
+		Type:       e.Type,
+		Name:       e.Name,
+		Variation:  e.Variation,
+		Group:      nil,
+		Attributes: nil,
+	}
+
 	//first lowercase all attribute keys
 	if res.Attributes == nil {
 		res.Attributes = Attributes{}
 	}
 
-	res.Attributes = escapeAttributes(res.Attributes)
+	if e.Attributes != nil {
+		res.Attributes = escapeAttributes(e.Attributes)
+	}
 
 	// propagate "name" and "id" to attributes if not exists
 	if _, ok := res.Attributes["name"]; !ok && res.Name != "" {
@@ -117,22 +121,29 @@ func EscapeEntity(e *Entity) *Entity {
 		res.Type = "User"
 	}
 
-	if res.Group != nil {
-		res.Group = escapeGroup(res.Group)
+	if e.Group != nil {
+		res.Group = escapeGroup(e.Group)
 	}
 
-	return res
+	return &res
 }
 
-// lower casing attributes keys  and propagate name and id to attributes
+// lower casing attributes keys and propagate name and id to attributes
+// returns pointer to new group
 func escapeGroup(g *Group) *Group {
-	var res = g
-
-	//first lowercase all attribute keys
-	if res.Attributes == nil {
-		res.Attributes = Attributes{}
+	res := Group{
+		ID:         g.ID,
+		Type:       g.Type,
+		Name:       g.Name,
+		Attributes: nil,
 	}
 
+	res.Attributes = Attributes{}
+	for k, v := range g.Attributes {
+		res.Attributes[k] = v
+	}
+
+	// lowercase all attribute keys
 	res.Attributes = escapeAttributes(res.Attributes)
 
 	// propagate "name" and "id" to attributes if not exists
@@ -142,7 +153,7 @@ func escapeGroup(g *Group) *Group {
 	if _, ok := res.Attributes["id"]; !ok {
 		res.Attributes["id"] = res.ID
 	}
-	return res
+	return &res
 }
 
 func (e *Entity) equals(entity *Entity) bool {
@@ -161,9 +172,8 @@ type Group struct {
 	Attributes Attributes `json:"attributes,omitempty"`
 }
 
-// Attributes
-// IMPORTANT: this map values type should be: string, int, float or bool.
-// escapeAttributes function below satisfies this invariant
+// Attributes must be a flat map with values one of these values: string, int, float or bool.
+// escapeAttributes function satisfies this invariant
 type Attributes map[string]interface{}
 
 // sets all keys to lowercase and filters out keys-value pairs with invalid value
@@ -171,12 +181,10 @@ func escapeAttributes(attributes Attributes) Attributes {
 	var res = make(Attributes)
 	for key, value := range attributes {
 		switch v := value.(type) {
-		// all filters are float64 because of json unmarshalling
 		case int:
 			res[strings.ToLower(key)] = float64(v)
 		case float32:
 			res[strings.ToLower(key)] = float64(v)
-		// only lowercasing by default
 		case bool, string, float64:
 			res[strings.ToLower(key)] = v
 		}
@@ -251,24 +259,22 @@ func (ff *FlagFilter) escape() {
 	ff.AttributeName = strings.ToLower(ff.AttributeName)
 	if ff.FilterType == filterTypeDate {
 
-		// to guarantee idempotence...
 		if ss, ok := ff.Value.(string); ok {
 			ts, err := time.Parse(time.RFC3339, ss)
 			if err != nil {
-				log.Warnf("parse filter value: %+v %+v", ff, errors.WithStack(err))
+				log.Warnf("Cannot parse value \"%+v\" for attribute \"%+v\" as RFC3339(\"%+v\")", ff.Value, ff.AttributeName, time.RFC3339)
 				return
 			}
 			ff.Value = ts
 		}
 
-		// to guarantee idempotence...
 		if ss, ok := ff.Value.([]string); ok {
 			tss := make([]time.Time, 0, len(ss))
 			for _, s := range ss {
 				ts, err := time.Parse(time.RFC3339, s)
 				if err != nil {
-					log.Warnf("parse filter value: %+v %+v", ff, errors.WithStack(err))
-					return
+					log.Warnf("Cannot parse value \"%+v\" for attribute \"%+v\" as RFC3339(\"%+v\")", ff.Value, ff.AttributeName, time.RFC3339)
+					continue
 				}
 				tss = append(tss, ts)
 			}
@@ -330,8 +336,7 @@ func (ff *FlagFilter) escape() {
 	}
 }
 
-// FilterValue
-// IMPORTANT: this object must be on of: [ int | float | string | bool | []int, []float | []string | []bool ]
+// FilterValue placeholder for one of these values: [ int | float | string | bool | []int, []float | []string | []bool ]
 type FilterValue interface{}
 
 // Event represent flagger event

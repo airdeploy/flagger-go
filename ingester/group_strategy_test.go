@@ -4,15 +4,12 @@ import (
 	"github.com/airdeploy/flagger-go/v3/core"
 	"github.com/airdeploy/flagger-go/v3/json"
 	"github.com/airdeploy/flagger-go/v3/log"
-	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
 )
 
 func TestNewGroupStrategy(t *testing.T) {
-	logrus.SetLevel(logrus.DebugLevel)
-
 	t.Run("Timer exceeds and ingestion httpRequest is sent", func(t *testing.T) {
 		count := 0
 		gs := initGroupStrategy(0, 1, 500, func(data []byte, ingestionURL string) error {
@@ -31,10 +28,10 @@ func TestNewGroupStrategy(t *testing.T) {
 	})
 
 	t.Run("URL is changed, gs sends data to the new URL", func(t *testing.T) {
-		newUrl := "http://some-new-url.com"
+		newURL := "http://some-new-url.com"
 		gs := initGroupStrategy(0, 60, 4, func(data []byte, ingestionURL string) error {
 			assert.NotNil(t, data)
-			assert.Equal(t, newUrl, ingestionURL)
+			assert.Equal(t, newURL, ingestionURL)
 			return nil
 		})
 		gs.Activate()
@@ -43,7 +40,7 @@ func TestNewGroupStrategy(t *testing.T) {
 			gs.Publish(ingestionDataRequest(false))
 		}
 
-		gs.SetURL(newUrl)
+		gs.SetURL(newURL)
 		gs.Publish(ingestionDataRequest(false))
 
 		finishedWithTimeout := gs.ShutdownWithTimeout(1 * time.Second)
@@ -141,7 +138,7 @@ func TestNewGroupStrategy(t *testing.T) {
 
 	t.Run("If there is no URL and ShutdownWithTimeout called => ingestion does not happen", func(t *testing.T) {
 		count := 0
-		gs := NewGroupStrategy(&core.SDKInfo{Name: "go", Version: "3.0.0"}, func(data []byte, ingestionURL string) error {
+		gs := newGroupStrategy(&core.SDKInfo{Name: "go", Version: "3.0.0"}, func(data []byte, ingestionURL string) error {
 			count++
 			return nil
 		}, 0)
@@ -305,7 +302,7 @@ func TestNewGroupStrategy(t *testing.T) {
 
 	t.Run("publish exposure before ingester is initiated and ShutdownWithTimeout publish the accumulated data", func(t *testing.T) {
 		count := 0
-		gs := NewGroupStrategy(&core.SDKInfo{Name: "go", Version: "3.0.0"}, func(data []byte, ingestionURL string) error {
+		gs := newGroupStrategy(&core.SDKInfo{Name: "go", Version: "3.0.0"}, func(data []byte, ingestionURL string) error {
 			count++
 			return nil
 		}, 0)
@@ -327,7 +324,6 @@ func TestNewGroupStrategy(t *testing.T) {
 	})
 
 	t.Run("data is still ingesting even if retryPolicy httpRequest is froze", func(t *testing.T) {
-		logrus.SetLevel(logrus.DebugLevel)
 		gs := initGroupStrategy(0, 60, 500, func(data []byte, ingestionURL string) error {
 			log.Debugf("ingest is triggered")
 			time.Sleep(100 * time.Second)
@@ -341,7 +337,6 @@ func TestNewGroupStrategy(t *testing.T) {
 	})
 
 	t.Run("data is publishing in the separate thread, ShutdownWithTimeout must stop publishing", func(t *testing.T) {
-		logrus.SetLevel(logrus.ErrorLevel)
 		gs := initGroupStrategy(0, 60, 500, func(data []byte, ingestionURL string) error {
 			return nil
 		})
@@ -419,8 +414,8 @@ func TestNewGroupStrategy(t *testing.T) {
 
 }
 
-func initGroupStrategy(firstExposuresIngestThreshold int, interval, maxItems int, callback HttpRequest) *GroupStrategy {
-	gs := NewGroupStrategy(&core.SDKInfo{Name: "go", Version: "3.0.0"}, callback, firstExposuresIngestThreshold)
+func initGroupStrategy(firstExposuresIngestThreshold int, interval, maxItems int, callback httpRequestType) *groupStrategy {
+	gs := newGroupStrategy(&core.SDKInfo{Name: "go", Version: "3.0.0"}, callback, firstExposuresIngestThreshold)
 	gs.Activate()
 
 	gs.SetURL("https://test.ingestion.com")

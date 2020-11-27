@@ -1,4 +1,4 @@
-package sse
+package internal
 
 import (
 	"context"
@@ -8,10 +8,7 @@ import (
 	"github.com/airdeploy/flagger-go/v3/log"
 )
 
-// Example SSE server in Golang.
-//     $ go run sse.go
-
-// Broker
+// Broker is core struct of sse server
 type Broker struct {
 	// events are pushed to this channel by the main events-gathering routine
 	Notifier chan []byte
@@ -26,9 +23,11 @@ type Broker struct {
 	clients map[chan []byte]bool
 
 	messageOnJoin []byte
+
+	newClientConnectHandler func()
 }
 
-// NewSSEServer
+// NewSSEServer creates new sse server intance
 func NewSSEServer(ctx context.Context, messageOnJoin []byte) *Broker {
 	// Instantiate a broker
 	broker := &Broker{
@@ -42,6 +41,11 @@ func NewSSEServer(ctx context.Context, messageOnJoin []byte) *Broker {
 	// Set it running - listening and broadcasting events
 	go broker.listen(ctx)
 	return broker
+}
+
+// SetNewClientConnectHandler sets a handler  that will be called when new client connects
+func (broker *Broker) SetNewClientConnectHandler(handler func()) {
+	broker.newClientConnectHandler = handler
 }
 
 // ServeHTTP
@@ -98,19 +102,22 @@ func (broker *Broker) listen(ctx context.Context) {
 	for {
 		select {
 		case s := <-broker.newClients:
+			if broker.newClientConnectHandler != nil {
+				broker.newClientConnectHandler()
+			}
 
 			// A new client has connected.
 			// Register their message channel
 			broker.clients[s] = true
 
 			s <- broker.messageOnJoin
-			log.Debugf("Client added. %d registered clients", len(broker.clients))
+			log.Debugf("SERVER: Client added. %d registered clients", len(broker.clients))
 		case s := <-broker.closingClients:
 
 			// A client has dettached and we want to
 			// stop sending them messages.
 			delete(broker.clients, s)
-			log.Debugf("Removed client. %d registered clients", len(broker.clients))
+			log.Debugf("SERVER: Removed client. %d registered clients", len(broker.clients))
 		case event := <-broker.Notifier:
 
 			// We got a new event from the outside!
@@ -119,9 +126,14 @@ func (broker *Broker) listen(ctx context.Context) {
 				clientMessageChan <- event
 			}
 		case <-ctx.Done():
-			log.Debugf("ctx.Done()")
+			log.Debugf("SERVER: ctx.Done()")
 			return
 		}
 	}
 
+}
+
+// ClientsCount returns the amount of connected clients
+func (broker *Broker) ClientsCount() int {
+	return len(broker.clients)
 }

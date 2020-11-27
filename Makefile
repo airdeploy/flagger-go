@@ -72,4 +72,4 @@ endif
 ## tests: Running "go test" on sources packages.
 tests: fmt vet revive
 	@echo $(TARGET_NAME)
-	@$(GOTEST) -count=1 ./...
+	@$(GOTEST) -count=1 ./... -coverprofile=coverage.txt -covermode=atomic

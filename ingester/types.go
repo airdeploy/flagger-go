@@ -6,13 +6,14 @@ import (
 	"sync"
 )
 
+// An Ingester is a mechanism to summarize and send data to server with retry policy
 type Ingester struct {
 	entity   *core.Entity
-	strategy *GroupStrategy
+	strategy *groupStrategy
 	mux      sync.Mutex
 }
 
-type GroupStrategy struct {
+type groupStrategy struct {
 	// the responsibility of the WaitGroup here is to ensure that all ingestion data
 	// is sent when ShutdownWithTimeout is called
 	wg            sync.WaitGroup
@@ -25,9 +26,9 @@ type GroupStrategy struct {
 	lock     sync.RWMutex
 	isActive bool
 
-	httpRequest HttpRequest   // readonly
-	sdkInfo     *core.SDKInfo // readonly
-	retryPolicy *RetryPolicy  // readonly
+	httpRequest httpRequestType // readonly
+	sdkInfo     *core.SDKInfo   // readonly
+	retryPolicy *retryPolicy    // readonly
 
 	// channels to update ingester config
 	updateSDKConfigChannel chan *core.SDKConfig
@@ -35,7 +36,7 @@ type GroupStrategy struct {
 
 	// inner channels to prevent synchronization
 	ingestionDataChannel chan *IngestionDataRequest
-	retryPolicyChannel   chan *RetryPolicyRequest
+	retryPolicyChannel   chan *retryPolicyRequest
 
 	// ingestion data
 	callCount                     int
@@ -44,34 +45,35 @@ type GroupStrategy struct {
 	accumulator                   []*IngestionDataRequest
 }
 
-type RetryPolicy struct {
+type retryPolicy struct {
 	maxMemorySizeInBytes int64
-	queue                []*QueueElement
+	queue                []*queueElement
 	currentMemorySize    int64
 }
 
-type QueueElement struct {
+type queueElement struct {
 	data     []byte
 	callback RetryPolicyCallback
 }
 
-type HttpRequest func(data []byte, ingestionURL string) error
+type httpRequestType func(data []byte, ingestionURL string) error
 
-type RetryPolicyRequest struct {
+type retryPolicyRequest struct {
 	data         []byte              // data to be sent to the server
 	ingestionURL string              // URL
-	httpRequest  HttpRequest         // function to be executed to send data
+	httpRequest  httpRequestType     // function to be executed to send data
 	callback     RetryPolicyCallback // callback
 }
 
-// This callback is called when retry policy finishes the processing of the ingestion data httpRequest
+// RetryPolicyCallback is called when retry policy finishes the processing of the ingestion data httpRequest
 // There are 2 possible scenarios:
 // 1) ingestion is successfully sent to the server
 // 2) new ingestion arrive, so the current ingestion is shift from the queue(not enough memory)
 type RetryPolicyCallback func(err error)
 
+// An IngestionDataRequest is a data object for the ingestion request
 type IngestionDataRequest struct {
-	Id            string           `json:"id"`
+	ID            string           `json:"id"`
 	Entities      []*core.Entity   `json:"entities"`
 	Exposures     []*core.Exposure `json:"exposures"` // the output of every Flag Function call
 	Events        []*core.Event    `json:"events"`    // user generated event
