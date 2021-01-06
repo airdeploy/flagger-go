@@ -46,6 +46,7 @@ func NewClient(cb CallBack) *Client {
 		keepaliveTimeout:  30 * time.Second,
 		ctx:               ctx,
 		cancel:            cancel,
+		addDelayBefore:    1 * time.Minute,
 	}
 }
 
@@ -66,6 +67,7 @@ type Client struct {
 
 	reconnectInterval time.Duration
 	keepaliveTimeout  time.Duration
+	addDelayBefore    time.Duration
 }
 
 // SetURL using to changing subscribing url
@@ -77,14 +79,6 @@ func (c *Client) SetURL(URL string) {
 // Shutdown - closes sse connection to free up the resources
 func (c *Client) Shutdown() {
 	c.cancel()
-}
-
-func (c *Client) setReconnectInterval(interval time.Duration) {
-	c.reconnectInterval = interval
-}
-
-func (c *Client) setKeepaliveTimeout(keepaliveTimeout time.Duration) {
-	c.keepaliveTimeout = keepaliveTimeout
 }
 
 // foundation of sse client:
@@ -112,9 +106,11 @@ func (c *Client) infiniteLoop() {
 	for {
 		isURLHasChanged := false // used to skipped reconnecting interval
 
+		var connectedAt time.Time
 		// this function try to connect to server by given URL, on success - called given callback
 		c.reconnect(URL, func(r io.Reader) {
 			// on connected callback scope
+			connectedAt = time.Now()
 
 			dataChannel := make(chan [][]byte, 32)
 
@@ -162,17 +158,24 @@ func (c *Client) infiniteLoop() {
 		log.Debugf("SSE: not accepting new messages")
 
 		if /* NOT */ !isURLHasChanged {
-			// reconnect interval: [reconnectInterval, 2*reconnectInterval]
-			interval := c.reconnectInterval + time.Duration(rand.Int63n(int64(c.reconnectInterval)))
+			reconnectWithDelay := time.Since(connectedAt) < c.addDelayBefore
 
-			log.Debugf("SSE: Waiting %s to reconnect", time.Duration.Round(interval, time.Second))
+			var interval time.Duration
+			if reconnectWithDelay {
+				// reconnect interval random in range [0, reconnectInterval]
+				interval = time.Duration(rand.Int63n(int64(c.reconnectInterval)))
+			} else {
+				interval = 0
+			}
+
+			log.Debugf("SSE: Waiting %s to reconnect", time.Duration.Round(interval, time.Millisecond))
 			// server URL can be changed during reconnection timeout, so:
 			timer := time.NewTimer(interval)
 			select {
 			case u := <-c.changeURL:
 				timer.Stop()
 				URL = u
-				log.Debugf("SSE: during reconnection interval URL has changed to %s", URL)
+				log.Debugf("SSE: URL has changed during reconnection phase to %s", URL)
 
 			case <-timer.C:
 				timer.Stop()

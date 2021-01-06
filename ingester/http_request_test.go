@@ -129,6 +129,7 @@ func TestHttpRequest(t *testing.T) {
 
 		err = httpRequest(dataStr, url)
 		assert.NotNil(t, err)
+		gock.OffAll()
 	})
 
 	t.Run("wrong URL", func(t *testing.T) {
@@ -136,7 +137,7 @@ func TestHttpRequest(t *testing.T) {
 		dataStr, err := json.Marshal(data)
 		assert.Nil(t, err)
 
-		err = httpRequest(dataStr, "https://localhost:1234/dada/dasdsa/dasda")
+		err = httpRequest(dataStr, "https://(&TGR(&#$G$#&($:1234/dada/dasdsa/dasda")
 		log.Printf("%+v", err)
 		assert.NotNil(t, err)
 	})

@@ -6,19 +6,22 @@ import (
 	"sync"
 )
 
+var defaultSDKConfig = &core.SDKConfig{
+	SDKIngestionMaxItems: 500,
+	SDKIngestionInterval: 60,
+}
+
 // An Ingester is a mechanism to summarize and send data to server with retry policy
 type Ingester struct {
 	entity   *core.Entity
 	strategy *groupStrategy
-	mux      sync.Mutex
+	mux      sync.RWMutex
 }
 
 type groupStrategy struct {
 	// the responsibility of the WaitGroup here is to ensure that all ingestion data
 	// is sent when ShutdownWithTimeout is called
-	wg            sync.WaitGroup
-	ingestionWg   sync.WaitGroup
-	retryPolicyWg sync.WaitGroup
+	wg sync.WaitGroup
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -30,13 +33,8 @@ type groupStrategy struct {
 	sdkInfo     *core.SDKInfo   // readonly
 	retryPolicy *retryPolicy    // readonly
 
-	// channels to update ingester config
-	updateSDKConfigChannel chan *core.SDKConfig
-	ingestionURLChannel    chan string
-
-	// inner channels to prevent synchronization
-	ingestionDataChannel chan *IngestionDataRequest
-	retryPolicyChannel   chan *retryPolicyRequest
+	sdkConfig *core.SDKConfig
+	url       string
 
 	// ingestion data
 	callCount                     int

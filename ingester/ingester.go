@@ -3,6 +3,7 @@ package ingester
 import (
 	"github.com/airdeploy/flagger-go/v3/core"
 	"github.com/airdeploy/flagger-go/v3/log"
+	"github.com/google/uuid"
 	"time"
 )
 
@@ -12,9 +13,7 @@ var _ interface {
 	Track(event *core.Event)
 	PublishExposure(exposure *core.Exposure, isNewFlag bool)
 	SetEntity(entity *core.Entity)
-	SetConfig(v *core.SDKConfig)
-	SetURL(ingestionURL string)
-	Activate()
+	Activate(ingestionURL string, config *core.SDKConfig)
 } = new(Ingester)
 
 // NewIngester creates new instance of ingester
@@ -39,12 +38,12 @@ func (i *Ingester) Publish(entity *core.Entity) {
 
 // Track adds new event to the ingester
 func (i *Ingester) Track(event *core.Event) {
-	i.mux.Lock()
-	defer i.mux.Unlock()
+	i.mux.RLock()
 
 	// do not publish if entity is not provided to the ingester
 	if event.Entity == nil && i.entity == nil {
 		log.Warnf("No entity provided to the flagger. Event will not be recorded, %+v", event)
+		i.mux.RUnlock()
 		return
 	}
 
@@ -56,10 +55,13 @@ func (i *Ingester) Track(event *core.Event) {
 		entities = append(entities, i.entity)
 	}
 
-	i.publish(&IngestionDataRequest{
+	request := &IngestionDataRequest{
 		Entities: entities,
 		Events:   []*core.Event{event},
-	})
+	}
+	i.mux.RUnlock()
+
+	i.publish(request)
 }
 
 // PublishExposure adds new exposure to the ingester
@@ -86,6 +88,17 @@ func (i *Ingester) PublishExposure(exposure *core.Exposure, isNewFlag bool) {
 	i.publish(ingestionData)
 }
 
+// SendEmptyIngestion sends empty ingestion to inform a server about sdk usage
+func (i *Ingester) SendEmptyIngestion() {
+	newUUID, err := uuid.NewUUID()
+	if err != nil {
+		return
+	}
+	i.publish(&IngestionDataRequest{
+		ID: newUUID.String(),
+	})
+}
+
 func (i *Ingester) publish(data *IngestionDataRequest) {
 	i.strategy.Publish(data)
 }
@@ -97,17 +110,7 @@ func (i *Ingester) SetEntity(entity *core.Entity) {
 	i.mux.Unlock()
 }
 
-// SetConfig sets new config
-func (i *Ingester) SetConfig(v *core.SDKConfig) {
-	i.strategy.SetConfig(v.Copy())
-}
-
-// SetURL sets url
-func (i *Ingester) SetURL(ingestionURL string) {
-	i.strategy.SetURL(ingestionURL)
-}
-
 // Activate activates ingester strategy. Must be the first method called after NewIngester
-func (i *Ingester) Activate() {
-	i.strategy.Activate()
+func (i *Ingester) Activate(ingestionURL string, config *core.SDKConfig) {
+	i.strategy.Activate(ingestionURL, config)
 }

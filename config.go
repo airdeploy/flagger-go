@@ -9,12 +9,7 @@ var (
 	// SDKInfo represent meta information
 	SDKInfo = &core.SDKInfo{
 		Name:    "golang",
-		Version: "3.0.9",
-	}
-
-	defaultSDKConfig = &core.SDKConfig{
-		SDKIngestionMaxItems: 500,
-		SDKIngestionInterval: 60,
+		Version: "3.0.10",
 	}
 
 	defaultAttemptsConnection = 2

@@ -1,6 +1,8 @@
 package ingester
 
 import (
+	"github.com/google/uuid"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"strconv"
@@ -18,8 +20,7 @@ const apiKey = "testApiKey"
 
 func TestNoEntityProvided(t *testing.T) {
 	ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 0)
-	ingester.Activate()
-	ingester.SetConfig(&core.SDKConfig{
+	ingester.Activate("", &core.SDKConfig{
 		SDKIngestionInterval: 1,
 		SDKIngestionMaxItems: 500,
 	})
@@ -82,9 +83,7 @@ func TestIngestionSendAfter500Calls(t *testing.T) {
 	})
 
 	ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 0)
-	ingester.Activate()
-	ingester.SetURL("https://ingestion.airdeploy.io/collector?envKey=" + apiKey)
-	ingester.SetConfig(&core.SDKConfig{
+	ingester.Activate("https://ingestion.airdeploy.io/collector?envKey="+apiKey, &core.SDKConfig{
 		SDKIngestionInterval: 1,
 		SDKIngestionMaxItems: maxItems,
 	})
@@ -148,9 +147,7 @@ func TestIngestionDeduped25Entities(t *testing.T) {
 	})
 
 	ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 0)
-	ingester.Activate()
-	ingester.SetURL("https://ingestion.airdeploy.io/collector?envKey=" + apiKey)
-	ingester.SetConfig(&core.SDKConfig{
+	ingester.Activate("https://ingestion.airdeploy.io/collector?envKey="+apiKey, &core.SDKConfig{
 		SDKIngestionInterval: 1,
 		SDKIngestionMaxItems: maxItems,
 	})
@@ -183,12 +180,10 @@ func TestDetectedFlagShouldImmediatelyIngest(t *testing.T) {
 		Reply(200)
 
 	ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 10)
-	ingester.Activate()
-	ingester.SetConfig(&core.SDKConfig{
+	ingester.Activate("https://ingestion.com/v3/ingest/12345678", &core.SDKConfig{
 		SDKIngestionInterval: 60,
 		SDKIngestionMaxItems: 500,
 	})
-	ingester.SetURL("https://ingestion.com/v3/ingest/12345678")
 
 	ingester.PublishExposure(&core.Exposure{
 		MethodCalled: "isEnabled",
@@ -214,28 +209,60 @@ func TestDetectedFlagShouldImmediatelyIngest(t *testing.T) {
 	assert.False(t, timeout)
 }
 
-func TestFirst10ExposureIngest(t *testing.T) {
+func TestIngester_SendEmptyIngestion(t *testing.T) {
+	gock.New("https://ingestion.com").
+		Post("/v3/ingest/12345678").
+		Reply(200)
+	ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 10)
+	ingester.Activate("https://ingestion.com/v3/ingest/12345678", &core.SDKConfig{
+		SDKIngestionInterval: 60,
+		SDKIngestionMaxItems: 500,
+	})
 
+	time.Sleep(100 * time.Millisecond)
+	callCounter := 0
+
+	gock.Observe(func(request *http.Request, mock gock.Mock) {
+		ingestionRequest, err := parseIngestionBody(request.Body)
+		assert.NoError(t, err)
+
+		assert.Equal(t, 0, len(ingestionRequest.Entities))
+		assert.Equal(t, 0, len(ingestionRequest.Exposures))
+		assert.Equal(t, 0, len(ingestionRequest.Events))
+		assert.Equal(t, 0, len(ingestionRequest.DetectedFlags))
+
+		_, err = uuid.Parse(ingestionRequest.ID)
+		assert.NoError(t, err)
+		// catch ingestion
+		callCounter++
+		gock.Observe(nil)
+	})
+	ingester.SendEmptyIngestion()
+
+	timeout := ingester.Shutdown(1 * time.Second)
+	assert.False(t, timeout)
+	assert.Equal(t, 1, callCounter)
+
+}
+
+func TestFirst10ExposureIngest(t *testing.T) {
 	gock.New("https://ingestion.com").
 		Post("/v3/ingest/12345678").
 		Times(11).
 		Reply(200)
 
 	ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 10)
-	ingester.Activate()
-	ingester.SetConfig(&core.SDKConfig{
+	ingester.Activate("https://ingestion.com/v3/ingest/12345678", &core.SDKConfig{
 		SDKIngestionInterval: 60,
 		SDKIngestionMaxItems: 500,
 	})
-	ingester.SetURL("https://ingestion.com/v3/ingest/12345678")
 	time.Sleep(100 * time.Millisecond)
 
 	callCounter := 0
 	gock.Observe(func(request *http.Request, mock gock.Mock) {
 		// catch ingestion
-		callCounter++
-		if callCounter == 11 {
-			gock.Observe(nil)
+		if request.Method == http.MethodPost {
+			callCounter++
 		}
 	})
 
@@ -257,19 +284,17 @@ func TestFirst10ExposureIngest(t *testing.T) {
 
 	timeout := ingester.Shutdown(1 * time.Second)
 	assert.False(t, timeout)
+	gock.Observe(nil)
 	assert.Equal(t, 11, callCounter)
 }
 
 func TestIngester_PublishExposure(t *testing.T) {
 	t.Run("exposure has no entity, ingester's entity is used", func(t *testing.T) {
 		ingester := NewIngester(&core.SDKInfo{Name: "golang", Version: "3.0.0"}, 10)
-		ingester.Activate()
-		ingester.SetConfig(&core.SDKConfig{
+		ingester.Activate("https://ingestion.com/v3/ingest/12345678", &core.SDKConfig{
 			SDKIngestionInterval: 60,
 			SDKIngestionMaxItems: 500,
 		})
-
-		ingester.SetURL("https://ingestion.com/v3/ingest/12345678")
 
 		entity := &core.Entity{
 			ID:         "1",
@@ -309,4 +334,15 @@ func TestIngester_PublishExposure(t *testing.T) {
 		timeout := ingester.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
 	})
+}
+
+func parseIngestionBody(body io.ReadCloser) (*IngestionDataRequest, error) {
+	buf, err := ioutil.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+
+	var data *IngestionDataRequest
+	err = json.Unmarshal(buf, &data)
+	return data, err
 }

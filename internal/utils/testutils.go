@@ -3,6 +3,8 @@ package utils
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/airdeploy/flagger-go/v3/ingester"
+	"io"
 	"io/ioutil"
 )
 
@@ -28,4 +30,16 @@ func MustJSONFile(filename string, v interface{}) {
 	if err != nil {
 		panic(fmt.Sprintf("bad json: %+v", err))
 	}
+}
+
+// ParseIngestionBody returns parse body and error
+func ParseIngestionBody(body io.ReadCloser) (*ingester.IngestionDataRequest, error) {
+	buf, err := ioutil.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+
+	var data *ingester.IngestionDataRequest
+	err = json.Unmarshal(buf, &data)
+	return data, err
 }

@@ -11,36 +11,21 @@ import (
 )
 
 func newGroupStrategy(sdkInfo *core.SDKInfo, httpRequest httpRequestType, firstExposuresIngestThreshold int) *groupStrategy {
-	ctx, cancel := context.WithCancel(context.Background())
 	gs := &groupStrategy{
-		wg:            sync.WaitGroup{},
-		ingestionWg:   sync.WaitGroup{},
-		retryPolicyWg: sync.WaitGroup{},
-
-		ctx:    ctx,
-		cancel: cancel,
+		wg: sync.WaitGroup{},
 
 		isActive: false,
 
 		httpRequest: httpRequest,
 		sdkInfo:     sdkInfo,
+		sdkConfig:   defaultSDKConfig,
+
 		retryPolicy: newRetryPolicy(),
-
-		// 16 is a magic number. 2 should work just fine, but 16>2, so 16
-		updateSDKConfigChannel: make(chan *core.SDKConfig, 16),
-		ingestionURLChannel:    make(chan string, 16),
-
-		// size must be really big to prevent synchronization
-		ingestionDataChannel: make(chan *IngestionDataRequest, 4000),
-		// to prevent stutter of the Publish function
-		retryPolicyChannel: make(chan *retryPolicyRequest, 1000),
 
 		callCount:                     0,
 		firstExposuresIngestThreshold: firstExposuresIngestThreshold,
 		accumulator:                   make([]*IngestionDataRequest, 0, 100),
 	}
-	gs.wg.Add(1) // wait for ingester to initialize
-	gs.startWorker()
 	return gs
 }
 
@@ -51,71 +36,31 @@ func (gs *groupStrategy) shouldSendIngestionData(ingestionMaxCalls int, data *In
 }
 
 func (gs *groupStrategy) startWorker() {
-	requestPolicyCtx, cancelRequestPolicy := context.WithCancel(context.Background())
 
 	go func() {
-		for {
-			select {
-			case request := <-gs.retryPolicyChannel:
-				gs.retryPolicy.ingest(request)
-				gs.retryPolicyWg.Done()
-			case <-requestPolicyCtx.Done():
-				return
-			}
-		}
-	}()
-
-	go func() {
-		sdkConfig := <-gs.updateSDKConfigChannel
+		gs.lock.RLock()
+		sdkConfig := gs.sdkConfig
+		ingestionURL := gs.url
+		gs.lock.RUnlock()
 		ingestionInterval := sdkConfig.IngestionIntervalDuration() // use 50*time.Milliseconds instead of 0
-		ingestionMaxCalls := sdkConfig.SDKIngestionMaxItems
 		ingestionTimer := time.NewTimer(ingestionInterval)
-		ingestionURL := <-gs.ingestionURLChannel
-		gs.wg.Done() // initialized
-
 		for {
 			select {
-			case data := <-gs.ingestionDataChannel:
-				// Adding data to accumulator
-				gs.accumulator = append(gs.accumulator, data)
-				gs.callCount++
-				gs.ingestionWg.Done()
-
-				if exposuresCount := len(data.Exposures); exposuresCount > 0 && (gs.exposuresCount <= gs.firstExposuresIngestThreshold) {
-					gs.exposuresCount += exposuresCount
-				}
-
-				if gs.shouldSendIngestionData(ingestionMaxCalls, data) {
-					gs.wg.Add(1)
-					gs.ingest(ingestionURL, func(err error) {
-						gs.wg.Done()
-					})
-				}
 			case <-ingestionTimer.C:
-				// Ingestion timer expires
-				if gs.callCount > 0 {
-					gs.wg.Add(1)
+				//Ingestion timer expires
+				gs.lock.RLock()
+				count := gs.callCount
+				gs.lock.RUnlock()
+
+				gs.wg.Add(1)
+				if count > 0 {
 					gs.ingest(ingestionURL, func(err error) {
 						gs.wg.Done()
 					})
+				} else {
+					gs.wg.Done()
 				}
 				ingestionTimer.Reset(ingestionInterval)
-
-			case URL := <-gs.ingestionURLChannel:
-				log.Debugf("URL has changed to %s", URL)
-				ingestionURL = URL
-
-			case sdkConfig = <-gs.updateSDKConfigChannel:
-				log.Debugf("New sdkConfig %+v", sdkConfig)
-				ingestionInterval = sdkConfig.IngestionIntervalDuration()
-				ingestionTimer.Reset(ingestionInterval)
-				ingestionMaxCalls = sdkConfig.SDKIngestionMaxItems
-				if gs.callCount >= ingestionMaxCalls {
-					gs.wg.Add(1)
-					gs.ingest(ingestionURL, func(err error) {
-						gs.wg.Done()
-					})
-				}
 
 			case <-gs.ctx.Done():
 				// this case is triggered by ShutdownWithTimeout
@@ -127,7 +72,6 @@ func (gs *groupStrategy) startWorker() {
 				} else {
 					gs.wg.Done() // release waiting for the shutdown function
 				}
-				cancelRequestPolicy()
 				return
 			}
 		}
@@ -137,6 +81,8 @@ func (gs *groupStrategy) startWorker() {
 
 // side effects notice: it clears callCount and accumulator
 func (gs *groupStrategy) ingest(ingestionURL string, callback RetryPolicyCallback) {
+	gs.lock.Lock()
+	defer gs.lock.Unlock()
 	bytes, err := transformToBytes(gs.accumulator, gs.sdkInfo)
 	if err == nil {
 		rpr := &retryPolicyRequest{
@@ -145,74 +91,72 @@ func (gs *groupStrategy) ingest(ingestionURL string, callback RetryPolicyCallbac
 			httpRequest:  gs.httpRequest,
 			callback:     callback,
 		}
-		gs.retryPolicyWg.Add(1)
-		gs.retryPolicyChannel <- rpr
+		go gs.retryPolicy.ingest(rpr)
 	}
 	gs.callCount = 0
 	gs.accumulator = []*IngestionDataRequest{}
 }
 
 func (gs *groupStrategy) Publish(data *IngestionDataRequest) {
-	gs.lock.RLock()
-	defer gs.lock.RUnlock()
-	if gs.isActive {
-		gs.ingestionWg.Add(1)
-		gs.ingestionDataChannel <- data
-	}
-}
-
-func (gs *groupStrategy) SetConfig(sdkConfig *core.SDKConfig) {
-	gs.lock.RLock()
-	defer gs.lock.RUnlock()
-	if gs.isActive {
-		gs.updateSDKConfigChannel <- sdkConfig
-	}
-}
-
-func (gs *groupStrategy) SetURL(ingestionURL string) {
-	gs.lock.RLock()
-	defer gs.lock.RUnlock()
-	if gs.isActive {
-		gs.ingestionURLChannel <- ingestionURL
-	}
-}
-
-func (gs *groupStrategy) Activate() {
 	gs.lock.Lock()
-	defer gs.lock.Unlock()
+	url := gs.url
+	if !gs.isActive {
+		gs.lock.Unlock()
+		return
+	}
+
+	gs.accumulator = append(gs.accumulator, data)
+	gs.callCount++
+
+	if exposuresCount := len(data.Exposures); exposuresCount > 0 && (gs.exposuresCount <= gs.firstExposuresIngestThreshold) {
+		gs.exposuresCount += exposuresCount
+	}
+	maxItems := gs.sdkConfig.SDKIngestionMaxItems
+
+	if gs.shouldSendIngestionData(maxItems, data) {
+		gs.lock.Unlock()
+		gs.wg.Add(1)
+		gs.ingest(url, func(err error) {
+			gs.wg.Done()
+		})
+	} else {
+		gs.lock.Unlock()
+	}
+}
+
+func (gs *groupStrategy) Activate(ingestionURL string, config *core.SDKConfig) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	gs.lock.Lock()
 	gs.isActive = true
+	gs.ctx = ctx
+	gs.cancel = cancel
+	gs.url = ingestionURL
+	if config != nil {
+		gs.sdkConfig = config
+	}
+	gs.lock.Unlock()
+
+	gs.startWorker()
 }
 
 // ShutdownWithTimeout features:
-// - waits for group strategy to be initialized(URL and sdkConfig are set)
 // - waits for current ingestion to finish
-// - waits for the ingestionDataChannel to read all the data
 // - adds all the data in the accumulator, ingest it and waits for the httpRequest to finish
 // returns false if shutdown terminates before the timeout
 func (gs *groupStrategy) ShutdownWithTimeout(timeout time.Duration) bool {
 	gs.lock.Lock()
 	if !gs.isActive {
-		defer gs.lock.Unlock()
+		gs.lock.Unlock()
 		return false
 	}
 	gs.isActive = false // stops new data to be published
 	gs.lock.Unlock()
 
-	start := time.Now()
-	// wait to read from ingestionDataChannel
-	waitTimeout(&gs.ingestionWg, timeout)
+	gs.wg.Add(1)
+	gs.cancel() // triggers gs.ctx.Done() async, that's why we add one more to waitGroup
 
-	// wait to read from retryPolicyChannel
-	waitTimeout(&gs.retryPolicyWg, timeout)
-
-	if time.Since(start) > timeout {
-		return true
-	}
-
-	gs.wg.Add(1) // this is required because it could be that ingester has some data to send
-	gs.cancel()  // triggers gs.ctx.Done() async, that's why we add one more to waitGroup
-
-	timer := time.NewTimer(timeout - time.Since(start))
+	timer := time.NewTimer(timeout)
 	c := make(chan struct{})
 	go func() {
 		defer close(c)

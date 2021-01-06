@@ -6,21 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"github.com/airdeploy/flagger-go/v3"
+	"github.com/airdeploy/flagger-go/v3/core"
+	"github.com/airdeploy/flagger-go/v3/ingester"
 	"github.com/airdeploy/flagger-go/v3/internal"
 	"github.com/airdeploy/flagger-go/v3/internal/utils"
+	"github.com/airdeploy/flagger-go/v3/json"
+	"github.com/stretchr/testify/assert"
 	"github.com/xeipuuv/gojsonschema"
+	"gopkg.in/h2non/gock.v1"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
 	"testing"
 	"time"
-
-	"github.com/airdeploy/flagger-go/v3/core"
-	"github.com/airdeploy/flagger-go/v3/ingester"
-	"github.com/airdeploy/flagger-go/v3/json"
-	"github.com/stretchr/testify/assert"
-	"gopkg.in/h2non/gock.v1"
 )
 
 const (
@@ -33,8 +32,9 @@ const (
 var errAPIKeyNotFound = errors.New("API keys not found")
 
 func Test_validateIngestionSchema(t *testing.T) {
-	catchIngestion(1)
+	catchIngestion(2)
 	defer gock.OffAll()
+	defer gock.Observe(nil)
 
 	count := 0
 
@@ -44,8 +44,8 @@ func Test_validateIngestionSchema(t *testing.T) {
 	}
 	schemaLoader := gojsonschema.NewBytesLoader(ingestionSchemaBuf)
 	gock.Observe(func(request *http.Request, mock gock.Mock) {
-		// catch ingestion
 		if request.Method == http.MethodPost {
+			count++
 			// read data from request
 			buf, err := ioutil.ReadAll(request.Body)
 			assert.NoError(t, err)
@@ -54,6 +54,11 @@ func Test_validateIngestionSchema(t *testing.T) {
 			var data *ingester.IngestionDataRequest
 			err = json.Unmarshal(buf, &data)
 			assert.Nil(t, err)
+
+			// skip init ingestion
+			if isEmpty(data) {
+				return
+			}
 
 			// additionally validates against schema
 			documentLoader := gojsonschema.NewBytesLoader(buf)
@@ -67,16 +72,13 @@ func Test_validateIngestionSchema(t *testing.T) {
 					assert.Fail(t, "- %s\n", desc)
 				}
 			}
-
-			count++
-			gock.Observe(nil)
 		}
 	})
 
-	flagger, err := initFlaggerInstance(ingestionConfig)
+	f, err := initFlaggerInstance(ingestionConfig)
 	assert.NoError(t, err)
 
-	flagger.IsEnabled("test", &core.Entity{
+	f.IsEnabled("test", &core.Entity{
 		ID:   "1234",
 		Type: "User",
 		Name: "John",
@@ -93,10 +95,10 @@ func Test_validateIngestionSchema(t *testing.T) {
 		},
 	})
 
-	timeout := flagger.Shutdown(1 * time.Second)
+	timeout := f.Shutdown(1 * time.Second)
 	assert.False(t, timeout)
 
-	assert.Equal(t, 1, count)
+	assert.Equal(t, 2, count)
 }
 
 func TestFlagger_Init(t *testing.T) {
@@ -109,13 +111,16 @@ func TestFlagger_Init(t *testing.T) {
 		assert.NotNil(t, f)
 
 		err := f.Init(&flagger.InitArgs{APIKey: "", SSEURL: utils.SseURL})
+
+		timeout := f.Shutdown(1 * time.Second)
+		assert.False(t, timeout)
 		assert.Equal(t, flagger.ErrBadInitArgs, err)
 	})
 
 	t.Run("positive", func(t *testing.T) {
 		defer gock.OffAll()
 
-		catchIngestion(1)
+		catchIngestion(2)
 
 		f, err := initFlaggerInstance(ingestionConfig)
 		assert.Nil(t, err)
@@ -129,16 +134,14 @@ func TestFlagger_Init(t *testing.T) {
 
 	t.Run("second call with same arguments triggers ingestion", func(t *testing.T) {
 		defer gock.OffAll()
-		catchIngestion(2)
+		// 2 init ingestion + 2 * one exposure per ingestion
+		catchIngestion(4)
 
 		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
 			// catch ingestion
 			if request.Method == http.MethodPost {
 				count++
-				if count == 2 {
-					gock.Observe(nil)
-				}
 			}
 		})
 
@@ -169,7 +172,8 @@ func TestFlagger_Init(t *testing.T) {
 		timeout := f.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
 
-		assert.Equal(t, 2, count)
+		assert.Equal(t, 4, count)
+		gock.Observe(nil)
 	})
 
 	t.Run("wrong apiKey results in flag functions false", func(t *testing.T) {
@@ -205,7 +209,7 @@ func TestFlagger_Init(t *testing.T) {
 	})
 
 	t.Run("init from backup source", func(t *testing.T) {
-		catchIngestion(1)
+		catchIngestion(2)
 		// flagger fails to get config from source 3 times
 		gock.New(utils.FlagsURL).
 			Get(utils.FlagsPath + utils.APIKey).
@@ -276,21 +280,17 @@ func TestSetEntity(t *testing.T) {
 
 func TestFlagger_Track(t *testing.T) {
 	t.Run("positive", func(t *testing.T) {
-
-		catchIngestion(1)
-		defer gock.OffAll()
-
+		catchIngestion(2)
 		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
-			// catch ingestion
 			if request.Method == http.MethodPost {
-				buf, err := ioutil.ReadAll(request.Body)
+				count++
+				data, err := utils.ParseIngestionBody(request.Body)
 				assert.NoError(t, err)
-
-				var data ingester.IngestionDataRequest
-				err = json.Unmarshal(buf, &data)
-				assert.NoError(t, err)
-
+				// skip init ingestion
+				if isEmpty(data) {
+					return
+				}
 				if assert.Len(t, data.Entities, 1) {
 					assert.Equal(t, "1", data.Entities[0].ID)
 					assert.Equal(t, "User", data.Entities[0].Type)
@@ -298,9 +298,6 @@ func TestFlagger_Track(t *testing.T) {
 				if assert.Len(t, data.Events, 1) {
 					assert.Equal(t, "test", data.Events[0].Name)
 				}
-
-				count++
-				gock.Observe(nil)
 			}
 		})
 
@@ -319,36 +316,31 @@ func TestFlagger_Track(t *testing.T) {
 
 		timeout := f.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
+		gock.Observe(nil)
 
-		assert.Equal(t, 1, count)
+		assert.Equal(t, 2, count)
 	})
 
 	t.Run("with default Entity", func(t *testing.T) {
 
-		catchIngestion(1)
-
-		defer gock.OffAll()
+		catchIngestion(2)
 
 		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
-			// catch ingestion
 			if request.Method == http.MethodPost {
-				buf, err := ioutil.ReadAll(request.Body)
-				assert.NoError(t, err)
-
-				var r ingester.IngestionDataRequest
-				err = json.Unmarshal(buf, &r)
-				assert.NoError(t, err)
-
-				if assert.Len(t, r.Entities, 1) {
-					assert.Equal(t, "1", r.Entities[0].ID)
-					assert.Equal(t, "User", r.Entities[0].Type)
-					assert.Equal(t, "test", r.Events[0].Name)
-				}
-				assert.Len(t, r.Events, 1)
-
 				count++
-				gock.Observe(nil)
+				data, err := utils.ParseIngestionBody(request.Body)
+				assert.NoError(t, err)
+				// skip init ingestion
+				if isEmpty(data) {
+					return
+				}
+				if assert.Len(t, data.Entities, 1) {
+					assert.Equal(t, "1", data.Entities[0].ID)
+					assert.Equal(t, "User", data.Entities[0].Type)
+					assert.Equal(t, "test", data.Events[0].Name)
+				}
+				assert.Len(t, data.Events, 1)
 			}
 		})
 
@@ -367,25 +359,24 @@ func TestFlagger_Track(t *testing.T) {
 
 		timeout := f.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
+		gock.Observe(nil)
 
-		assert.Equal(t, 1, count)
+		assert.Equal(t, 2, count)
 	})
 
 	t.Run("doesn't add invalid events to the ingester", func(t *testing.T) {
-		catchIngestion(1)
-		defer gock.OffAll()
+		catchIngestion(2)
 
 		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
-			// catch ingestion
 			if request.Method == http.MethodPost {
-				buf, err := ioutil.ReadAll(request.Body)
+				count++
+				data, err := utils.ParseIngestionBody(request.Body)
 				assert.NoError(t, err)
-
-				var data ingester.IngestionDataRequest
-				err = json.Unmarshal(buf, &data)
-				assert.NoError(t, err)
-
+				// skip init ingestion
+				if isEmpty(data) {
+					return
+				}
 				if assert.Len(t, data.Entities, 1) {
 					assert.Equal(t, "1", data.Entities[0].ID)
 					assert.Equal(t, "User", data.Entities[0].Type)
@@ -393,9 +384,6 @@ func TestFlagger_Track(t *testing.T) {
 				if assert.Len(t, data.Events, 1) {
 					assert.Equal(t, "test", data.Events[0].Name)
 				}
-
-				count++
-				gock.Observe(nil)
 			}
 		})
 
@@ -420,36 +408,34 @@ func TestFlagger_Track(t *testing.T) {
 
 		timeout := f.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
+		gock.Observe(nil)
 
-		assert.Equal(t, 1, count)
+		assert.Equal(t, 2, count)
 	})
 }
 
 func TestFlagger_Publish(t *testing.T) {
 
 	t.Run("publish adds entity to ingester", func(t *testing.T) {
-		catchIngestion(1)
+		catchIngestion(2)
 		defer gock.OffAll()
 
 		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
-			// catch ingestion
 			if request.Method == http.MethodPost {
-
-				buf, err := ioutil.ReadAll(request.Body)
+				count++
+				data, err := utils.ParseIngestionBody(request.Body)
 				assert.NoError(t, err)
-
-				var r ingester.IngestionDataRequest
-				err = json.Unmarshal(buf, &r)
-				assert.NoError(t, err)
-
-				if assert.Len(t, r.Entities, 1) {
-					assert.Equal(t, "54", r.Entities[0].ID)
-					assert.Equal(t, "User", r.Entities[0].Type)
+				// skip init ingestion
+				if isEmpty(data) {
+					return
 				}
 
-				count++
-				gock.Observe(nil)
+				if assert.Len(t, data.Entities, 1) {
+					assert.Equal(t, "54", data.Entities[0].ID)
+					assert.Equal(t, "User", data.Entities[0].Type)
+				}
+
 			}
 		})
 
@@ -461,34 +447,32 @@ func TestFlagger_Publish(t *testing.T) {
 		timeout := f.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
 
-		assert.Equal(t, 1, count)
+		gock.Observe(nil)
+		assert.Equal(t, 2, count)
 	})
 
 	t.Run("invalid entities are not added to the ingester", func(t *testing.T) {
 		f, err := initFlaggerInstance(ingestionConfig)
 		assert.Nil(t, err)
 
-		catchIngestion(1)
+		catchIngestion(2)
 
 		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
-			// catch ingestion
 			if request.Method == http.MethodPost {
-
-				buf, err := ioutil.ReadAll(request.Body)
+				count++
+				data, err := utils.ParseIngestionBody(request.Body)
 				assert.NoError(t, err)
-
-				var r ingester.IngestionDataRequest
-				err = json.Unmarshal(buf, &r)
-				assert.NoError(t, err)
-
-				if assert.Len(t, r.Entities, 1) {
-					assert.Equal(t, "1", r.Entities[0].ID)
-					assert.Equal(t, "User", r.Entities[0].Type)
+				// skip init ingestion
+				if isEmpty(data) {
+					return
 				}
 
-				count++
-				gock.Observe(nil)
+				if assert.Len(t, data.Entities, 1) {
+					assert.Equal(t, "1", data.Entities[0].ID)
+					assert.Equal(t, "User", data.Entities[0].Type)
+				}
+
 			}
 		})
 
@@ -497,14 +481,14 @@ func TestFlagger_Publish(t *testing.T) {
 		f.Publish(&core.Entity{ID: "1"})
 		timeout := f.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
-		assert.Equal(t, 1, count)
+		gock.Observe(nil)
+		assert.Equal(t, 2, count)
 	})
 }
 
 func TestFlagFunctions(t *testing.T) {
 	t.Run("IsEnabled", func(t *testing.T) {
-		defer gock.OffAll()
-		catchIngestion(2)
+		catchIngestion(3)
 
 		f, err := initFlaggerInstance(ingestionConfig)
 		assert.NoError(t, err)
@@ -535,7 +519,7 @@ func TestFlagFunctions(t *testing.T) {
 	t.Run("IsSampled", func(t *testing.T) {
 		defer gock.OffAll()
 
-		catchIngestion(2)
+		catchIngestion(3)
 
 		f, err := initFlaggerInstance(ingestionConfig)
 		assert.NoError(t, err)
@@ -565,7 +549,7 @@ func TestFlagFunctions(t *testing.T) {
 	t.Run("GetPayload", func(t *testing.T) {
 		defer gock.OffAll()
 
-		catchIngestion(1)
+		catchIngestion(2)
 
 		f, err := initFlaggerInstance(ingestionConfig)
 		assert.NoError(t, err)
@@ -579,9 +563,7 @@ func TestFlagFunctions(t *testing.T) {
 
 	t.Run("GetVariation", func(t *testing.T) {
 
-		gock.New(utils.IngestionURL).
-			Post(utils.IngestionPath + utils.APIKey).
-			Reply(http.StatusOK)
+		catchIngestion(2)
 
 		defer gock.OffAll()
 
@@ -669,7 +651,7 @@ func TestFilters(t *testing.T) {
 // dynamic-pricing flag killSwitch is on at source(configuration.json) but off at sse
 func TestFlagger_SSE(t *testing.T) {
 	defer gock.OffAll()
-	catchIngestion(1)
+	catchIngestion(2)
 	flaggerConfigMessage := getConfigMessage()
 	ctx := context.Background()
 	ctx, done := context.WithCancel(ctx)
@@ -694,7 +676,7 @@ func TestFlagger_SSE(t *testing.T) {
 	err := f.Init(&flagger.InitArgs{APIKey: utils.APIKey, SSEURL: "http://localhost:" + ssePort + "/"})
 	assert.NoError(t, err)
 
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1000 * time.Millisecond)
 
 	entity := &core.Entity{
 		ID:         "kfjvv3",
@@ -705,7 +687,7 @@ func TestFlagger_SSE(t *testing.T) {
 	assert.True(t, f.IsSampled("dynamic-pricing", entity))
 	done()
 
-	timeout := f.Shutdown(1 * time.Second)
+	timeout := f.Shutdown(5 * time.Second)
 	assert.False(t, timeout)
 }
 
@@ -765,6 +747,7 @@ func TestShutdown(t *testing.T) {
 	})
 
 	t.Run("Init, Shutdown, Init recover initial state", func(t *testing.T) {
+		catchIngestion(3)
 
 		defer gock.OffAll()
 		f, err := initFlaggerInstance(defaultConfig)
@@ -772,8 +755,6 @@ func TestShutdown(t *testing.T) {
 
 		timeout := f.Shutdown(1 * time.Second)
 		assert.False(t, timeout)
-
-		catchIngestion(1)
 
 		f, err = initFlaggerInstance(defaultConfig)
 		assert.NoError(t, err)
@@ -803,17 +784,14 @@ func TestIngestion(t *testing.T) {
 
 		gock.New(utils.IngestionURL).
 			Post(utils.IngestionPath + utils.APIKey).
-			Times(11).
+			// init (1) + first 10 + last ingestion with 2 exposures
+			Times(12).
 			Reply(http.StatusOK)
 
 		count := 0
 		gock.Observe(func(request *http.Request, mock gock.Mock) {
-			// catch ingestion
 			if request.Method == http.MethodPost {
 				count++
-				if count == 11 {
-					gock.Observe(nil)
-				}
 			}
 		})
 
@@ -825,11 +803,13 @@ func TestIngestion(t *testing.T) {
 
 		time.Sleep(100 * time.Millisecond)
 
-		assert.Equal(t, 10, count)
+		assert.Equal(t, 11, count)
 
 		timeout := f.Shutdown(1 * time.Second)
+
 		assert.False(t, timeout)
-		assert.Equal(t, 11, count)
+		assert.Equal(t, 12, count)
+		gock.Observe(nil)
 
 	})
 
@@ -941,6 +921,32 @@ func TestFlaggerMustNotMutatePassedEntity(t *testing.T) {
 
 }
 
+func BenchmarkFlagger_flagFunctions(b *testing.B) {
+	f, err := initFlaggerInstance(defaultConfig)
+	assert.Nil(b, err)
+
+	for i := 0; i < b.N; i++ {
+		f.IsEnabled("color-theme", &core.Entity{ID: "31404847", Type: "User",
+			Attributes: map[string]interface{}{
+				"createdAt": "2014-09-20T00:00:00Z",
+			}})
+		f.IsSampled("color-theme", &core.Entity{ID: "31404847", Type: "User",
+			Attributes: map[string]interface{}{
+				"createdAt": "2014-09-20T00:00:00Z",
+			}})
+
+		f.GetPayload("color-theme", &core.Entity{ID: "31404847", Type: "User",
+			Attributes: map[string]interface{}{
+				"createdAt": "2014-09-20T00:00:00Z",
+			}})
+
+		f.GetVariation("color-theme", &core.Entity{ID: "31404847", Type: "User",
+			Attributes: map[string]interface{}{
+				"createdAt": "2014-09-20T00:00:00Z",
+			}})
+	}
+}
+
 func initFlaggerInstance(configFileName string) (*flagger.Flagger, error) {
 
 	var configuration *core.Configuration
@@ -974,4 +980,11 @@ func catchIngestion(times int) {
 		Post(utils.IngestionPath + utils.APIKey).
 		Times(times).
 		Reply(http.StatusOK)
+}
+
+func isEmpty(dr *ingester.IngestionDataRequest) bool {
+	return len(dr.Entities) == 0 &&
+		len(dr.Exposures) == 0 &&
+		len(dr.DetectedFlags) == 0 &&
+		len(dr.Events) == 0
 }

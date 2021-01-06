@@ -7,7 +7,6 @@ import (
 	"context"
 	"github.com/airdeploy/flagger-go/v3/internal"
 	"github.com/google/uuid"
-	"github.com/sirupsen/logrus"
 	"gopkg.in/h2non/gock.v1"
 	"io"
 	"io/ioutil"
@@ -98,7 +97,6 @@ func Test_processMessage(t *testing.T) {
 			})
 		})
 		t.Run("because error occurred during parsing the config", func(t *testing.T) {
-			logrus.SetLevel(logrus.DebugLevel)
 			processMessage([][]byte{
 				[]byte(`id:74f24698-ef4a-4a67-bc5a-2d583ed54a0a`),
 				[]byte(`event:flagConfigUpdate`),
@@ -247,7 +245,7 @@ func Test_SSE_Connection(t *testing.T) {
 		serve := http.ListenAndServe("localhost:"+ssePort, sseServer)
 		log.Fatal("HTTP server error: ", serve)
 	}()
-	timeToConnect := 10 * time.Millisecond
+	timeToConnect := 500 * time.Millisecond
 
 	// wait for the server to start
 	time.Sleep(100 * time.Millisecond)
@@ -260,7 +258,7 @@ func Test_SSE_Connection(t *testing.T) {
 		})
 		sseClient.SetURL(sseURL)
 		// wait to connect
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(timeToConnect)
 
 		for i := 0; i < 4; i++ {
 			sseServer.Notifier <- flaggerConfigMessage
@@ -289,7 +287,7 @@ func Test_SSE_Connection(t *testing.T) {
 
 		sseServer.Notifier <- flaggerConfigMessage
 		//wait to deliver
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(timeToConnect)
 		assert.Equal(t, 1, count)
 
 		sseClient.Shutdown()
@@ -299,7 +297,7 @@ func Test_SSE_Connection(t *testing.T) {
 		sseServer.Notifier <- flaggerConfigMessage
 		sseServer.Notifier <- flaggerConfigMessage
 		//wait to deliver, but no delivery should happened
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(timeToConnect)
 		assert.Equal(t, 1, count)
 
 	})
@@ -311,7 +309,7 @@ func Test_SSE_Connection(t *testing.T) {
 		sseClient := NewClient(func(v *core.Configuration) {
 			count++
 		})
-		sseClient.setReconnectInterval(10 * time.Millisecond)
+		sseClient.reconnectInterval = 10 * time.Millisecond
 		sseClient.SetURL(sseURL)
 
 		time.Sleep(timeToConnect)
@@ -324,28 +322,37 @@ func Test_SSE_Connection(t *testing.T) {
 	})
 
 	t.Run("keepAlive expires, sseClient reconnects", func(t *testing.T) {
+
+		connect := make(chan struct{})
+		sseServer.SetNewClientConnectHandler(func() {
+			connect <- struct{}{}
+		})
+
 		sseClient := NewClient(func(_ *core.Configuration) {})
+		defer func() {
+			sseClient.Shutdown()
+			sseServer.SetNewClientConnectHandler(nil)
+			time.Sleep(timeToConnect)
+			assert.Zero(t, sseServer.ClientsCount())
+		}()
 
 		keepAliveTimeout := time.Millisecond * 500
-		sseClient.setKeepaliveTimeout(keepAliveTimeout)
+		sseClient.keepaliveTimeout = keepAliveTimeout
 		reconnectInterval := time.Millisecond * 100
-		sseClient.setReconnectInterval(reconnectInterval)
+		sseClient.reconnectInterval = reconnectInterval
 
 		sseClient.SetURL(sseURL)
 		// wait to connect
-		time.Sleep(timeToConnect)
+		<-connect
 		assert.Equal(t, 1, sseServer.ClientsCount())
 
 		// keep alive timeout
-		time.Sleep(keepAliveTimeout - timeToConnect + 10*time.Millisecond)
+		time.Sleep(keepAliveTimeout + 50*time.Millisecond)
 		assert.Equal(t, 0, sseServer.ClientsCount())
 
 		// wait to reconnect
-		time.Sleep(reconnectInterval * 2)
-		assert.Equal(t, 1, sseServer.ClientsCount())
+		<-connect
 
-		sseClient.Shutdown()
-		time.Sleep(timeToConnect)
 	})
 
 	t.Run("Changing URL triggers reconnect", func(t *testing.T) {
@@ -367,28 +374,30 @@ func Test_SSE_Connection(t *testing.T) {
 
 		sseClient.Shutdown()
 		time.Sleep(timeToConnect)
+		assert.Zero(t, sseServer.ClientsCount())
 
 		sseServer.SetNewClientConnectHandler(nil)
 	})
 
 	t.Run("url is changed during reconnection interval, triggers immediate reconnection", func(t *testing.T) {
-		count := 0
-		sseServer.SetNewClientConnectHandler(func() {
-			count++
+		sseServer.SetNewClientConnectHandler(func() {})
+
+		onJoin := make(chan struct{})
+		sseClient := NewClient(func(_ *core.Configuration) {
+			onJoin <- struct{}{}
 		})
-		sseClient := NewClient(func(_ *core.Configuration) {})
 
 		keepAliveTimeout := 200 * time.Millisecond
-		sseClient.setKeepaliveTimeout(keepAliveTimeout)
+		sseClient.keepaliveTimeout = keepAliveTimeout
 
 		sseClient.SetURL(sseURL)
-
+		<-onJoin
 		// wait for keep alive timeout
 		time.Sleep(keepAliveTimeout + 50*time.Millisecond)
 		assert.Zero(t, sseServer.ClientsCount())
 
 		sseClient.SetURL(sseURL)
-		time.Sleep(timeToConnect)
+		<-onJoin
 
 		assert.Equal(t, 1, sseServer.ClientsCount())
 
@@ -402,7 +411,7 @@ func Test_SSE_Connection(t *testing.T) {
 		sseClient := NewClient(func(_ *core.Configuration) {})
 
 		keepAliveTimeout := 200 * time.Millisecond
-		sseClient.setKeepaliveTimeout(keepAliveTimeout)
+		sseClient.keepaliveTimeout = keepAliveTimeout
 
 		sseClient.SetURL(sseURL)
 
@@ -411,42 +420,59 @@ func Test_SSE_Connection(t *testing.T) {
 		time.Sleep(timeToConnect)
 		assert.Zero(t, sseServer.ClientsCount())
 	})
-}
 
-func Test_ClientSlow(t *testing.T) {
-	t.SkipNow()
-	ctx := context.Background()
+	t.Run("connection length is less than limit, reconnect with delay", func(t *testing.T) {
+		onJoin := make(chan struct{})
+		sseClient := NewClient(func(_ *core.Configuration) {
+			onJoin <- struct{}{}
+		})
 
-	flaggerConfigMessage := getConfigMessage()
-	broker := internal.NewSSEServer(ctx, flaggerConfigMessage)
-	go func() {
-		log.Fatal("HTTP server error: ", http.ListenAndServe("localhost:"+ssePort, broker))
-	}()
+		keepAliveTimeout := 200 * time.Millisecond
 
-	keepalive := []byte("id: 37237fc0-dee2-44cc-be21-806fe0e65201\n" +
-		"event: keepalive\n" +
-		"data:\n\n")
+		sseClient.addDelayBefore = 1 * time.Minute
+		sseClient.keepaliveTimeout = keepAliveTimeout
+		sseClient.reconnectInterval = 1 * time.Hour
 
-	go func() {
-		for {
-			time.Sleep(time.Second * 35)
-			broker.Notifier <- keepalive
-		}
-	}()
+		sseClient.SetURL(sseURL)
 
-	go func() {
-		for {
-			time.Sleep(time.Second * 45)
-			broker.Notifier <- flaggerConfigMessage
-		}
-	}()
+		// wait to connect
+		<-onJoin
+		assert.Equal(t, 1, sseServer.ClientsCount())
 
-	time.Sleep(1 * time.Second)
+		// wait for timout and reconnect with a random delay
+		time.Sleep(keepAliveTimeout + 50*time.Millisecond)
+		assert.Zero(t, sseServer.ClientsCount())
 
-	cli := NewClient(func(v *core.Configuration) {})
-	cli.SetURL(sseURL)
+		sseClient.Shutdown()
+		time.Sleep(timeToConnect)
+		assert.Zero(t, sseServer.ClientsCount())
+	})
 
-	time.Sleep(10 * time.Minute)
+	t.Run("connection length is more than limit, reconnect without delay", func(t *testing.T) {
+		onJoin := make(chan struct{})
+		sseClient := NewClient(func(_ *core.Configuration) {
+			onJoin <- struct{}{}
+		})
+
+		keepaliveTimeout := 200 * time.Millisecond
+		sseClient.addDelayBefore = 100 * time.Millisecond
+		sseClient.keepaliveTimeout = keepaliveTimeout
+		sseClient.reconnectInterval = 1 * time.Hour
+
+		sseClient.SetURL(sseURL)
+
+		// wait to connect
+		<-onJoin
+		assert.Equal(t, 1, sseServer.ClientsCount())
+
+		// wait for timeout and reconnect without delay
+		<-onJoin
+		assert.Equal(t, 1, sseServer.ClientsCount())
+
+		sseClient.Shutdown()
+		time.Sleep(timeToConnect)
+		assert.Zero(t, sseServer.ClientsCount())
+	})
 }
 
 func getConfigMessage() []byte {

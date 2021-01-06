@@ -13,7 +13,7 @@ import (
 	"github.com/airdeploy/flagger-go/v3/sse"
 )
 
-const firstExposuresIngestThreshold = 10
+const firstExposuresIngestThreshold = 11
 
 // check implementation public interface on compile time
 var _ interface {
@@ -63,13 +63,10 @@ func (flagger *Flagger) Init(args *InitArgs) error {
 	flagger.mux.Lock()
 	defer flagger.mux.Unlock()
 
+	flagger.Shutdown(1 * time.Second)
+
 	// Ingester
-	if flagger.ingester == nil {
-		flagger.ingester = ingester.NewIngester(sdkInfo, firstExposuresIngestThreshold)
-	} else {
-		flagger.ingester.Shutdown(1000 * time.Millisecond)
-		flagger.ingester = ingester.NewIngester(sdkInfo, firstExposuresIngestThreshold)
-	}
+	flagger.ingester = ingester.NewIngester(sdkInfo, firstExposuresIngestThreshold)
 
 	// get configuration from SourceURL/BackupSourceURL
 	var configuration *core.Configuration
@@ -90,17 +87,15 @@ func (flagger *Flagger) Init(args *InitArgs) error {
 
 	// init returns err if flagger fails to get the configuration
 	flagger.core.SetConfig(configuration)
-	flagger.ingester.Activate()
-	flagger.ingester.SetURL(args.IngestionURL)
-	flagger.ingester.SetConfig(&configuration.SdkConfig)
+
+	flagger.ingester.Activate(args.IngestionURL, &configuration.SdkConfig)
+	flagger.ingester.SendEmptyIngestion()
 
 	// SSE
-	if flagger.sse != nil {
-		flagger.sse.Shutdown()
-	}
 	flagger.sse = sse.NewClient(func(v *core.Configuration) {
 		flagger.core.SetConfig(v)
-		flagger.ingester.SetConfig(&v.SdkConfig)
+		flagger.ingester.Shutdown(time.Second)
+		flagger.ingester.Activate(args.IngestionURL, &v.SdkConfig)
 	})
 	flagger.sse.SetURL(args.SSEURL)
 	return nil
@@ -117,8 +112,12 @@ func (flagger *Flagger) Shutdown(timeout time.Duration) bool {
 	// this could happen if Shutdown is called before init
 	if flagger.sse != nil {
 		flagger.sse.Shutdown()
+		flagger.sse = nil
 	}
 	if flagger.ingester != nil {
+		defer func() {
+			flagger.ingester = nil
+		}()
 		return flagger.ingester.Shutdown(timeout)
 	}
 	return false
