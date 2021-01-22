@@ -17,6 +17,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -340,7 +341,10 @@ func TestFlagger_Track(t *testing.T) {
 					assert.Equal(t, "User", data.Entities[0].Type)
 					assert.Equal(t, "test", data.Events[0].Name)
 				}
-				assert.Len(t, data.Events, 1)
+				if assert.Len(t, data.Events, 1) {
+					assert.Equal(t, "1", data.Events[0].Entity.ID)
+					assert.Equal(t, "User", data.Events[0].Entity.Type)
+				}
 			}
 		})
 
@@ -863,6 +867,142 @@ func TestIngestion(t *testing.T) {
 	})
 }
 
+func TestFlaggerIsNotInitialized(t *testing.T) {
+	t.Run("calling any function on uninitialized flagger doesn't break anything", func(t *testing.T) {
+		entity := &core.Entity{
+			ID: "1",
+		}
+
+		functions := []func(f *flagger.Flagger){
+			func(f *flagger.Flagger) {
+				f.Track(&core.Event{
+					Name:            "",
+					EventProperties: nil,
+					Entity:          entity,
+				})
+			},
+			func(f *flagger.Flagger) {
+				f.Publish(entity)
+			},
+			func(f *flagger.Flagger) {
+				f.SetEntity(entity)
+			},
+			func(f *flagger.Flagger) {
+				f.SetEntity(nil)
+			},
+			func(f *flagger.Flagger) {
+				f.IsEnabled("random", entity)
+			},
+			func(f *flagger.Flagger) {
+				f.GetPayload("random", entity)
+
+			},
+			func(f *flagger.Flagger) {
+				f.IsSampled("random", entity)
+			},
+			func(f *flagger.Flagger) {
+				f.GetVariation("random", entity)
+			},
+		}
+
+		for _, function := range functions {
+			f := flagger.NewFlagger()
+			function(f)
+			timeout := f.Shutdown(time.Second)
+			assert.False(t, timeout)
+		}
+
+	})
+}
+
+func TestSilentFlaggerInit(t *testing.T) {
+	t.Run("flagger functions implicitly init flagger", func(t *testing.T) {
+		entity := &core.Entity{
+			ID: "1",
+			Attributes: map[string]interface{}{
+				"country":  "France",
+				"bday":     "2016-03-16T05:44:23.000Z",
+				"age":      42,
+				"booleans": false,
+			},
+		}
+		testCases := []struct {
+			ingestionCount            int
+			funcToSilentlyInitFlagger func(f *flagger.Flagger)
+		}{
+			{
+				ingestionCount: 2, // init, IsEnabled
+				funcToSilentlyInitFlagger: func(f *flagger.Flagger) {
+					f.IsEnabled("codename", entity)
+				},
+			},
+			{
+				ingestionCount: 2, // init, IsSampled
+				funcToSilentlyInitFlagger: func(f *flagger.Flagger) {
+					f.IsSampled("codename", entity)
+				},
+			},
+			{
+				ingestionCount: 2, // init, GetVariation
+				funcToSilentlyInitFlagger: func(f *flagger.Flagger) {
+					f.GetVariation("codename", entity)
+				},
+			},
+			{
+				ingestionCount: 2, // init, GetPayload
+				funcToSilentlyInitFlagger: func(f *flagger.Flagger) {
+					f.GetPayload("codename", entity)
+				},
+			},
+			{
+				ingestionCount: 2, // init, Track
+				funcToSilentlyInitFlagger: func(f *flagger.Flagger) {
+					f.Track(&core.Event{
+						Name:            "",
+						EventProperties: nil,
+						Entity:          entity,
+					})
+				},
+			},
+			{
+				ingestionCount: 2, // init, Publish
+				funcToSilentlyInitFlagger: func(f *flagger.Flagger) {
+					f.Publish(entity)
+				},
+			},
+			{
+				ingestionCount: 1, // init
+				funcToSilentlyInitFlagger: func(f *flagger.Flagger) {
+					err := f.Init(nil)
+					assert.Nil(t, err)
+				},
+			},
+		}
+
+		var configuration *core.Configuration
+		utils.MustJSONFile(ingestionConfig, &configuration)
+
+		for _, test := range testCases {
+			catchIngestion(test.ingestionCount + 1) // +1 for isEnabled later
+			gock.New(utils.FlagsURL).
+				Get(utils.FlagsPath + utils.APIKey).
+				Reply(http.StatusOK).
+				JSON(configuration)
+			f := flagger.NewFlagger()
+			setFlaggerEnvVars()
+			test.funcToSilentlyInitFlagger(f)
+
+			// ensure flagger is initialized
+			enabled := f.IsEnabled("new-signup-flow", entity)
+			assert.True(t, enabled)
+
+			timeout := f.Shutdown(time.Second)
+			assert.False(t, timeout)
+			unsetFlaggerEnvVars()
+		}
+	})
+}
+
 func TestFlaggerMustNotMutatePassedEntity(t *testing.T) {
 	catchIngestion(5)
 	entityID := "123"
@@ -987,4 +1127,19 @@ func isEmpty(dr *ingester.IngestionDataRequest) bool {
 		len(dr.Exposures) == 0 &&
 		len(dr.DetectedFlags) == 0 &&
 		len(dr.Events) == 0
+}
+
+func setFlaggerEnvVars() {
+	_ = os.Setenv(flagger.FlaggerAPIKey, utils.APIKey)
+	_ = os.Setenv(flagger.FlaggerSourceURL, utils.FlagsURL+utils.FlagsPath)
+	_ = os.Setenv(flagger.FlaggerIngestionURL, utils.IngestionURL+utils.IngestionPath)
+	_ = os.Setenv(flagger.FlaggerSSEUrl, utils.SseURL)
+	//_ = os.Setenv(flagger.FlaggerLogLevel, "debug")
+}
+
+func unsetFlaggerEnvVars() {
+	_ = os.Unsetenv(flagger.FlaggerAPIKey)
+	_ = os.Unsetenv(flagger.FlaggerSourceURL)
+	_ = os.Unsetenv(flagger.FlaggerIngestionURL)
+	_ = os.Unsetenv(flagger.FlaggerSSEUrl)
 }

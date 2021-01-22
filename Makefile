@@ -69,6 +69,14 @@ else
 	@-golangci-lint run ./...
 endif
 
+release:
+	@echo $(TARGET_NAME)
+ifeq (, $(shell which gorelease))
+	@echo "install gorelease..."
+	$(GOGET) -u golang.org/x/exp/cmd/gorelease
+endif
+	@gorelease
+
 ## tests: Running "go test" on sources packages.
 tests: fmt vet revive
 	@echo $(TARGET_NAME)

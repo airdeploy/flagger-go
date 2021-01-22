@@ -3,6 +3,7 @@ package flagger
 import (
 	"github.com/airdeploy/flagger-go/v3/internal/httputils"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -42,6 +43,7 @@ type Flagger struct {
 	ingester *ingester.Ingester
 	sse      *sse.Client
 	mux      sync.RWMutex
+	enabled  bool
 }
 
 // InitArgs represent init arguments for Flagger
@@ -51,22 +53,23 @@ type InitArgs struct {
 	BackupSourceURL string
 	IngestionURL    string
 	SSEURL          string
+	LogLevel        string
 }
 
 // Init gets FlaggerConfiguration, establishes and maintains SSE connections and initialize Ingester
 func (flagger *Flagger) Init(args *InitArgs) error {
-	args, sdkInfo, err := prepareInitArgs(args, SDKInfo) // this method return copy of *InitArgs and *core.SDKInfo
+	args, err := prepareInitArgs(args, SDKInfo)
 	if err != nil {
 		return err
 	}
 
+	flagger.Shutdown(1 * time.Second)
+
 	flagger.mux.Lock()
 	defer flagger.mux.Unlock()
 
-	flagger.Shutdown(1 * time.Second)
-
 	// Ingester
-	flagger.ingester = ingester.NewIngester(sdkInfo, firstExposuresIngestThreshold)
+	flagger.ingester = ingester.NewIngester(SDKInfo, firstExposuresIngestThreshold)
 
 	// get configuration from SourceURL/BackupSourceURL
 	var configuration *core.Configuration
@@ -85,6 +88,8 @@ func (flagger *Flagger) Init(args *InitArgs) error {
 		log.Debugf("init flagger from SourceURL was success: %+v", string(bytes))
 	}
 
+	flagger.enabled = true
+
 	// init returns err if flagger fails to get the configuration
 	flagger.core.SetConfig(configuration)
 
@@ -101,11 +106,38 @@ func (flagger *Flagger) Init(args *InitArgs) error {
 	return nil
 }
 
+func (flagger *Flagger) silentInit() (res bool) {
+	apiKey := os.Getenv(FlaggerAPIKey)
+	sourceURL := os.Getenv(FlaggerSourceURL)
+	backupSourceURL := os.Getenv(FlaggerBackupSourceURL)
+	ingestionURL := os.Getenv(FlaggerIngestionURL)
+	sseURL := os.Getenv(FlaggerSSEUrl)
+	logLevel := os.Getenv(FlaggerLogLevel)
+	log.Debugf("Trying to initialise flagger using environment variables, "+
+		"FLAGGER_API_KEY: '%s', "+
+		"FLAGGER_SOURCE_URL: '%s', "+
+		"FLAGGER_BACKUP_SOURCE_URL: '%s', "+
+		"FLAGGER_INGESTION_URL: '%s', "+
+		"FLAGGER_SSE_URL: '%s', "+
+		"FLAGGER_LOG_LEVEL: '%s'", apiKey, sourceURL, backupSourceURL, ingestionURL, sseURL, logLevel)
+	err := flagger.Init(nil)
+	res = err == nil
+	if !res {
+		log.Errorf("Could not initialize flagger using environment variables, set LogLevel to debug to see environment variables values, for more info see: https://docs.airdeploy.io/flagger-sdk/quick-start")
+	}
+	return res
+}
+
 // Shutdown ingests data(if any), stops ingester and closes SSE connection.
 // Shutdown waits to finish current ingestion request, but no longer than a timeout.
 //
 // returns true if closed by timeout
 func (flagger *Flagger) Shutdown(timeout time.Duration) bool {
+	flagger.mux.Lock()
+	defer flagger.mux.Unlock()
+
+	flagger.enabled = false
+
 	flagger.core.SetConfig(nil)
 	flagger.core.SetEntity(nil)
 
@@ -115,9 +147,6 @@ func (flagger *Flagger) Shutdown(timeout time.Duration) bool {
 		flagger.sse = nil
 	}
 	if flagger.ingester != nil {
-		defer func() {
-			flagger.ingester = nil
-		}()
 		return flagger.ingester.Shutdown(timeout)
 	}
 	return false
@@ -137,13 +166,13 @@ func (flagger *Flagger) Publish(entity *core.Entity) {
 
 	escapedEntity := core.EscapeEntity(entity)
 
-	flagger.mux.RLock()
-	flagger.ingester.Publish(escapedEntity)
-	flagger.mux.RUnlock()
+	flagger.checkFlaggerInitialized(func() {
+		flagger.ingester.Publish(escapedEntity)
+	})
 }
 
 // Track is simple event tracking API.
-// Entity is an optional parameter if it was set before.
+// Entity could be omitted if it has already been set before.
 func (flagger *Flagger) Track(event *core.Event) {
 	if event == nil {
 		log.Warnf("Could not track because event is empty")
@@ -162,9 +191,23 @@ func (flagger *Flagger) Track(event *core.Event) {
 
 	escapedEvent := core.EscapeEvent(event)
 
+	flagger.checkFlaggerInitialized(func() {
+		flagger.ingester.Track(escapedEvent)
+	})
+}
+
+func (flagger *Flagger) checkFlaggerInitialized(callback func()) {
 	flagger.mux.RLock()
-	flagger.ingester.Track(escapedEvent)
-	flagger.mux.RUnlock()
+	if !flagger.enabled {
+		// unlocking before calling to prevent synchronization
+		flagger.mux.RUnlock()
+		if flagger.silentInit() {
+			callback()
+		}
+	} else {
+		defer flagger.mux.RUnlock()
+		callback()
+	}
 }
 
 // SetEntity stores an entity in Flagger, which allows omission of entity in other API methods.
@@ -182,12 +225,15 @@ func (flagger *Flagger) SetEntity(entity *core.Entity) {
 		return
 	}
 	escapedEntity := core.EscapeEntity(entity)
-	flagger.mux.RLock()
+
+	flagger.mux.Lock()
 	flagger.core.SetEntity(escapedEntity)
-	if flagger.ingester != nil {
-		flagger.ingester.SetEntity(escapedEntity)
+
+	if flagger.ingester == nil {
+		flagger.ingester = ingester.NewIngester(SDKInfo, firstExposuresIngestThreshold)
 	}
-	flagger.mux.RUnlock()
+	flagger.ingester.SetEntity(escapedEntity)
+	flagger.mux.Unlock()
 
 	bytes, _ := json.Marshal(escapedEntity)
 	log.Debugf("New entity is set to Flagger, entity: %+v", string(bytes))
@@ -197,13 +243,17 @@ func (flagger *Flagger) SetEntity(entity *core.Entity) {
 func (flagger *Flagger) IsEnabled(codename string, entity *core.Entity) bool {
 	escapedEntity := core.EscapeEntity(entity)
 
-	flagger.mux.RLock()
-	flagResult := flagger.core.EvaluateFlag(codename, escapedEntity)
-	flagger.ingestExposure("isEnabled", codename, flagResult)
-	flagger.mux.RUnlock()
+	var flagResult *core.FlagResult
+	flagger.checkFlaggerInitialized(func() {
+		flagResult = flagger.core.EvaluateFlag(codename, escapedEntity)
+		flagger.ingestExposure("isEnabled", codename, flagResult)
+	})
 
 	bytes, _ := json.Marshal(flagResult)
 	log.Debugf("IsEnabled: %+v", string(bytes))
+	if flagResult == nil {
+		return false
+	}
 	return flagResult.Enabled
 }
 
@@ -213,13 +263,17 @@ func (flagger *Flagger) IsEnabled(codename string, entity *core.Entity) bool {
 func (flagger *Flagger) IsSampled(codename string, entity *core.Entity) bool {
 	escapedEntity := core.EscapeEntity(entity)
 
-	flagger.mux.RLock()
-	flagResult := flagger.core.EvaluateFlag(codename, escapedEntity)
-	flagger.ingestExposure("isSampled", codename, flagResult)
-	flagger.mux.RUnlock()
+	var flagResult *core.FlagResult
+	flagger.checkFlaggerInitialized(func() {
+		flagResult = flagger.core.EvaluateFlag(codename, escapedEntity)
+		flagger.ingestExposure("isSampled", codename, flagResult)
+	})
 
 	bytes, _ := json.Marshal(flagResult)
 	log.Debugf("IsSampled: %+v", string(bytes))
+	if flagResult == nil {
+		return false
+	}
 	return flagResult.Sampled
 }
 
@@ -228,13 +282,17 @@ func (flagger *Flagger) IsSampled(codename string, entity *core.Entity) bool {
 func (flagger *Flagger) GetVariation(codename string, entity *core.Entity) string {
 	escapedEntity := core.EscapeEntity(entity)
 
-	flagger.mux.RLock()
-	flagResult := flagger.core.EvaluateFlag(codename, escapedEntity)
-	flagger.ingestExposure("getVariation", codename, flagResult)
-	flagger.mux.RUnlock()
+	var flagResult *core.FlagResult
+	flagger.checkFlaggerInitialized(func() {
+		flagResult = flagger.core.EvaluateFlag(codename, escapedEntity)
+		flagger.ingestExposure("getVariation", codename, flagResult)
+	})
 
 	bytes, _ := json.Marshal(flagResult)
 	log.Debugf("GetVariation: %+v", string(bytes))
+	if flagResult == nil {
+		return core.DefaultVariation().Codename
+	}
 	return flagResult.Variation.Codename
 }
 
@@ -242,20 +300,25 @@ func (flagger *Flagger) GetVariation(codename string, entity *core.Entity) strin
 func (flagger *Flagger) GetPayload(codename string, entity *core.Entity) core.Payload {
 	escapedEntity := core.EscapeEntity(entity)
 
-	flagger.mux.RLock()
-	flagResult := flagger.core.EvaluateFlag(codename, escapedEntity)
-	flagger.ingestExposure("getPayload", codename, flagResult)
-	flagger.mux.RUnlock()
+	var flagResult *core.FlagResult
+	flagger.checkFlaggerInitialized(func() {
+		flagResult = flagger.core.EvaluateFlag(codename, escapedEntity)
+		flagger.ingestExposure("getPayload", codename, flagResult)
+	})
 
 	bytes, _ := json.Marshal(flagResult)
 	log.Debugf("GetPayload: %+v", string(bytes))
+	if flagResult == nil {
+		return core.DefaultVariation().Payload
+	}
 	return flagResult.Payload
 }
 
+// flagger must be initialized
+// not thread safe
 func (flagger *Flagger) ingestExposure(methodName, codename string, result *core.FlagResult) {
-	if flagger.ingester != nil &&
-		// do not ingest if data is corrupted or there is nothing to ingest
-		result.Reason != core.CodenameIsEmpty &&
+	// do not ingest if data is corrupted or there is nothing to ingest
+	if result.Reason != core.CodenameIsEmpty &&
 		result.Reason != core.NoEntityProvided &&
 		result.Reason != core.FlaggerIsNotInitialized &&
 		result.Reason != core.IDIsEmpty {

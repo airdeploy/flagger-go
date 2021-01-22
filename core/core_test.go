@@ -2,14 +2,11 @@ package core
 
 import (
 	"encoding/json"
-	"flag"
 	"github.com/stretchr/testify/assert"
 	"log"
 	"strconv"
 	"testing"
 )
-
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 
 func TestCore_EvaluateFlag(t *testing.T) {
 	t.Run("empty codename", func(t *testing.T) {
@@ -31,8 +28,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    entity,
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			IsNew:     false,
 			Reason:    CodenameIsEmpty,
 		}, r)
@@ -57,8 +54,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    entity,
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			IsNew:     false,
 			Reason:    IDIsEmpty,
 		}, r)
@@ -71,8 +68,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    nil,
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			IsNew:     true,
 			Reason:    FlaggerIsNotInitialized,
 		}, r)
@@ -84,8 +81,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    nil,
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			IsNew:     true,
 			Reason:    ConfigIsEmpty,
 		}, r)
@@ -107,8 +104,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    nil,
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			Reason:    NoEntityProvided,
 		}, r)
 
@@ -120,8 +117,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Hashkey:   "hashkey3",
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			Reason:    Default,
 		}, r)
 
@@ -132,8 +129,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Hashkey:   "hashkey2",
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			Reason:    Default,
 		}, r)
 	})
@@ -153,8 +150,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    &Entity{ID: "3315"},
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			IsNew:     true,
 			Reason:    FlagNotInConfig,
 		}, r)
@@ -176,8 +173,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    &Entity{ID: "3315"},
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			Reason:    Default,
 		}, core.EvaluateFlag("codename2", &Entity{ID: "3315"}))
 
@@ -196,8 +193,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    &Entity{ID: "3312"},
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			IsNew:     true,
 			Reason:    FlagNotInConfig,
 		}, core.EvaluateFlag("codename2", &Entity{ID: "3312"}))
@@ -207,8 +204,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    &Entity{ID: "32"},
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			Reason:    Default,
 		}, core.EvaluateFlag("codename6", &Entity{ID: "32"}))
 	})
@@ -230,8 +227,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    &Entity{ID: "1"},
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			Reason:    Default,
 		}, core.EvaluateFlag("codename2", nil))
 
@@ -242,8 +239,8 @@ func TestCore_EvaluateFlag(t *testing.T) {
 			Entity:    &Entity{ID: "2"},
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			Reason:    Default,
 		}, core.EvaluateFlag("codename3", nil))
 	})

@@ -9,7 +9,7 @@ var (
 	// SDKInfo represent meta information
 	SDKInfo = &core.SDKInfo{
 		Name:    "golang",
-		Version: "3.0.10",
+		Version: "3.1.0",
 	}
 
 	defaultAttemptsConnection = 2

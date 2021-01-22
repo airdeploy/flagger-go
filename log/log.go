@@ -4,17 +4,24 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+var log = logrus.New()
+
 // Debugf thread safe write debug message
 func Debugf(fmt string, args ...interface{}) {
-	logrus.Debugf(fmt, args...)
+	log.Debugf(fmt, args...)
 }
 
 // Warnf thread safe write warning message
 func Warnf(fmt string, args ...interface{}) {
-	logrus.Warnf(fmt, args...)
+	log.Warnf(fmt, args...)
 }
 
 // Errorf thread safe write error message
 func Errorf(fmt string, args ...interface{}) {
-	logrus.Errorf(fmt, args...)
+	log.Errorf(fmt, args...)
+}
+
+// SetLevel set logging level for flagger
+func SetLevel(level logrus.Level) {
+	log.SetLevel(level)
 }

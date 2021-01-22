@@ -13,8 +13,8 @@ func Test_evaluateFlag(t *testing.T) {
 				Hashkey:   "hashkey",
 				Enabled:   false,
 				Sampled:   false,
-				Variation: newEmptyVariation(),
-				Payload:   newEmptyPayload(),
+				Variation: DefaultVariation(),
+				Payload:   defaultPayload(),
 				Reason:    KillSwitchEngaged,
 			},
 			evaluateFlag(
@@ -33,8 +33,8 @@ func Test_evaluateFlag(t *testing.T) {
 				Hashkey:   "hashkey",
 				Enabled:   false,
 				Sampled:   false,
-				Variation: newEmptyVariation(),
-				Payload:   newEmptyPayload(),
+				Variation: DefaultVariation(),
+				Payload:   defaultPayload(),
 				Reason:    IndividualBlacklist,
 			},
 			evaluateFlag(
@@ -90,8 +90,8 @@ func Test_evaluateFlag(t *testing.T) {
 				Hashkey:   "hashkey",
 				Enabled:   false,
 				Sampled:   false,
-				Variation: newEmptyVariation(),
-				Payload:   newEmptyPayload(),
+				Variation: DefaultVariation(),
+				Payload:   defaultPayload(),
 				Reason:    GroupBlacklist,
 			},
 			evaluateFlag(
@@ -159,8 +159,8 @@ func Test_evaluateFlag(t *testing.T) {
 				Hashkey:   "hashkey",
 				Enabled:   true,
 				Sampled:   false,
-				Variation: newEmptyVariation(),
-				Payload:   newEmptyPayload(),
+				Variation: DefaultVariation(),
+				Payload:   defaultPayload(),
 				Reason:    IndividualWhitelist,
 			},
 			evaluateFlag(
@@ -184,8 +184,8 @@ func Test_evaluateFlag(t *testing.T) {
 				Hashkey:   "hashkey",
 				Enabled:   false,
 				Sampled:   false,
-				Variation: newEmptyVariation(),
-				Payload:   newEmptyPayload(),
+				Variation: DefaultVariation(),
+				Payload:   defaultPayload(),
 				Reason:    IndividualBlacklist,
 			},
 			evaluateFlag(
@@ -274,8 +274,8 @@ func Test_evaluateFlag(t *testing.T) {
 				Hashkey:   "hashKey1",
 				Enabled:   true,
 				Sampled:   true,
-				Variation: newEmptyVariation(),
-				Payload:   newEmptyPayload(),
+				Variation: DefaultVariation(),
+				Payload:   defaultPayload(),
 				Reason:    IsSampledByGroup,
 			},
 			evaluateFlag(
@@ -317,7 +317,7 @@ func Test_evaluateFlag(t *testing.T) {
 					Probability: 0.5,
 					Payload:     Payload{},
 				},
-				Payload: newEmptyPayload(),
+				Payload: defaultPayload(),
 				Reason:  IsSampledByGroup,
 			},
 			evaluateFlag(
@@ -364,8 +364,8 @@ func Test_evaluateFlag(t *testing.T) {
 				Hashkey:   "hashKey5",
 				Enabled:   false,
 				Sampled:   false,
-				Variation: newEmptyVariation(),
-				Payload:   newEmptyPayload(),
+				Variation: DefaultVariation(),
+				Payload:   defaultPayload(),
 				Reason:    Default,
 			},
 			evaluateFlag(
@@ -425,7 +425,7 @@ func Test_extractVariation(t *testing.T) {
 
 	// have no Variation by codename
 	assert.Equal(t,
-		newEmptyVariation(),
+		DefaultVariation(),
 		extractVariation(
 			&FlagConfig{
 				Variations: []*FlagVariation{
@@ -442,7 +442,7 @@ func Test_extractVariation(t *testing.T) {
 func Test_chooseVariation(t *testing.T) {
 	// empty variations
 	assert.Equal(t,
-		newEmptyVariation(),
+		DefaultVariation(),
 		chooseVariation(
 			0.3,
 			[]*FlagVariation{}))

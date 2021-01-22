@@ -12,7 +12,8 @@ require (
 	github.com/sirupsen/logrus v1.6.0
 	github.com/stretchr/testify v1.6.0
 	github.com/xeipuuv/gojsonschema v1.2.0
-	golang.org/x/sys v0.0.0-20201221093633-bc327ba9c2f0 // indirect
-	golang.org/x/tools v0.0.0-20201221195807-b57d1c5b4a02 // indirect
+	golang.org/x/exp v0.0.0-20201229011636-eab1b5eb1a03 // indirect
+	golang.org/x/sys v0.0.0-20210105210732-16f7687f5001 // indirect
+	golang.org/x/tools v0.0.0-20210106214847-113979e3529a // indirect
 	gopkg.in/h2non/gock.v1 v1.0.15
 )

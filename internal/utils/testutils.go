@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 )
 
+// constants for testing purposes
 const (
 	FlagsURL          = "https://flags.airdeploy.io"
 	BackupFlagsURL    = "https://backup-api.airshiphq.com"

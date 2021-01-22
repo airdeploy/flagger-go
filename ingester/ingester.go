@@ -53,6 +53,7 @@ func (i *Ingester) Track(event *core.Event) {
 		entities = append(entities, event.Entity)
 	} else if i.entity != nil {
 		entities = append(entities, i.entity)
+		event.Entity = i.entity
 	}
 
 	request := &IngestionDataRequest{

@@ -59,15 +59,16 @@ const (
 	Default Reason = "Default (off) treatment reached"
 )
 
-func newEmptyPayload() Payload {
+func defaultPayload() Payload {
 	return make(Payload)
 }
 
-func newEmptyVariation() *FlagVariation {
+// DefaultVariation returns default variation
+func DefaultVariation() *FlagVariation {
 	return &FlagVariation{
 		Codename:    "off",
 		Probability: 1.0,
-		Payload:     newEmptyPayload(),
+		Payload:     defaultPayload(),
 	}
 }
 
@@ -80,8 +81,8 @@ func evaluateFlag(confHashKey string, flagConfig *FlagConfig, entity *Entity) *F
 			Entity:    entity,
 			Enabled:   false,
 			Sampled:   false,
-			Variation: newEmptyVariation(),
-			Payload:   newEmptyPayload(),
+			Variation: DefaultVariation(),
+			Payload:   defaultPayload(),
 			IsNew:     false,
 			Reason:    KillSwitchEngaged,
 		}
@@ -95,8 +96,8 @@ func evaluateFlag(confHashKey string, flagConfig *FlagConfig, entity *Entity) *F
 				Entity:    entity,
 				Enabled:   false,
 				Sampled:   false,
-				Variation: newEmptyVariation(),
-				Payload:   newEmptyPayload(),
+				Variation: DefaultVariation(),
+				Payload:   defaultPayload(),
 				IsNew:     false,
 				Reason:    IndividualBlacklist,
 			}
@@ -131,8 +132,8 @@ func evaluateFlag(confHashKey string, flagConfig *FlagConfig, entity *Entity) *F
 					Entity:    entity,
 					Enabled:   false,
 					Sampled:   false,
-					Variation: newEmptyVariation(),
-					Payload:   newEmptyPayload(),
+					Variation: DefaultVariation(),
+					Payload:   defaultPayload(),
 					IsNew:     false,
 					Reason:    GroupBlacklist,
 				}
@@ -201,8 +202,8 @@ func evaluateFlag(confHashKey string, flagConfig *FlagConfig, entity *Entity) *F
 		Entity:    entity,
 		Enabled:   false,
 		Sampled:   false,
-		Variation: newEmptyVariation(),
-		Payload:   newEmptyPayload(),
+		Variation: DefaultVariation(),
+		Payload:   defaultPayload(),
 		IsNew:     false,
 		Reason:    Default,
 	}
@@ -214,7 +215,7 @@ func extractVariation(flagConfig *FlagConfig, codename string) *FlagVariation {
 			return v
 		}
 	}
-	return newEmptyVariation()
+	return DefaultVariation()
 }
 
 func variationHash(codename, id, Type string) float64 {
@@ -231,7 +232,7 @@ func chooseVariation(hash float64, variations []*FlagVariation) *FlagVariation {
 			return v
 		}
 	}
-	return newEmptyVariation()
+	return DefaultVariation()
 }
 
 func samplingHash(envKey, hashKey, id, Type string) float64 {

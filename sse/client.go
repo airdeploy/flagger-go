@@ -136,8 +136,6 @@ func (c *Client) infiniteLoop() {
 					}
 
 					keepAliveTimer.Reset(c.keepaliveTimeout)
-
-					log.Debugf("SSE: has received the message: %s", message)
 					processMessage(message, c.cb)
 
 				case <-keepAliveTimer.C:
@@ -248,6 +246,7 @@ func processMessage(message [][]byte, cb CallBack) {
 	}
 
 	if kind == "flagConfigUpdate" {
+		log.Debugf("SSE: has received the message: %s", message)
 		var v *core.Configuration
 		err := json.Unmarshal(data, &v)
 		if err != nil {
